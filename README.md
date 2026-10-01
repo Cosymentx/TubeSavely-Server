@@ -2,8 +2,6 @@
 
 基于 FastAPI 构建的视频下载和管理系统后端服务。
 
-仓库：[Cosymentx/TubeSavely-Server](https://github.com/Cosymentx/TubeSavely-Server)。
-
 ## TubeSavely 系列项目
 
 TubeSavely 系列由三个仓库组成，分别维护 Flutter 客户端、Vue Web 客户端和 Python API 服务。
