@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.orm import Session
 from typing import Dict
 import requests
@@ -11,6 +11,7 @@ from app.schemas.token import Token
 from app.schemas.response import ApiResponse
 from app.schemas.user import User
 from app.services.user import create_or_update_user
+from app.api.v1.endpoints.auth import set_refresh_cookie
 
 router = APIRouter()
 
@@ -92,6 +93,7 @@ async def oauth_callback(
         provider: str,
         code: str,
         state: str,
+        response: Response,
         db: Session = Depends(deps.get_db)
 ):
     """
@@ -211,6 +213,7 @@ async def oauth_callback(
             "oauth_id": db_user.oauth_id
         }
         access_token = create_oauth_token(token_data, provider)
+        set_refresh_cookie(response, db_user.email)
 
         # Return response in the correct format using the User model
         return ApiResponse(data=Token(
