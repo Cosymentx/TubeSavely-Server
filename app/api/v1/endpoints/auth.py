@@ -154,7 +154,7 @@ async def register(
         logger.error(f"Traceback: {traceback.format_exc()}")
         return ApiResponse(
             code=500,
-            msg=f"Registration failed: {str(e)}",
+            msg="Registration failed",
         )
 
 @router.post("/login", response_model=ApiResponse[dict])
@@ -190,7 +190,7 @@ async def login(
         logger.error(f"Login error traceback: {traceback.format_exc()}")
         return ApiResponse(
             code=500,
-            msg=f"Login failed: {str(e)}",
+            msg="Login failed",
         )
 
 @router.post("/oauth/token", response_model=ApiResponse[dict])
@@ -299,7 +299,7 @@ async def set_password(
         logger.error(f"Traceback: {traceback.format_exc()}")
         return ApiResponse(
             code=500,
-            msg=f"Failed to set password: {str(e)}",
+            msg="Failed to set password",
         )
 
 @router.post("/change-password", response_model=ApiResponse[dict])
@@ -349,7 +349,7 @@ async def change_password(
         logger.error(f"Traceback: {traceback.format_exc()}")
         return ApiResponse(
             code=500,
-            msg=f"Failed to change password: {str(e)}",
+            msg="Failed to change password",
         )
 
 
