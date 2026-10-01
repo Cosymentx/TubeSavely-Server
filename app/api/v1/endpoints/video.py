@@ -78,17 +78,11 @@ def create_video(
                 data=None
             )
 
-        # Check if user has enough credits
-        if current_user.credits < video_in.credits_cost:
-            return ApiResponse(
-                code=400,
-                msg="Insufficient credits to download this video",
-                data=None
-            )
-
         video = create_video_service(db, video_in, current_user)
         return ApiResponse(data=video)
     except Exception as e:
+        if e.__class__.__name__ == "InsufficientCreditsError":
+            return ApiResponse(code=400, msg="Insufficient credits to download this video", data=None)
         logger.error(f"Error creating video: {str(e)}")
         return ApiResponse(
             code=500,
