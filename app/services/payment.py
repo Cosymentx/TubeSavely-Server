@@ -298,7 +298,8 @@ def refresh_checkout_payment(db: Session, payment: Payment) -> Payment:
             return payment
         if product.get("currency", "").upper() != payment.currency or product.get("price") != int(payment.amount * 100):
             return payment
-        trade_no = checkout.get("order", {}).get("id")
+        order = checkout.get("order", {}) or {}
+        trade_no = order.get("transaction") or order.get("transaction_id") or order.get("id")
         if not trade_no:
             return payment
     else:
