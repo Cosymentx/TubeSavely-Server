@@ -18,8 +18,6 @@ from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.exceptions import http_exception_handler, validation_exception_handler, general_exception_handler
 from app.api.v1.api import api_router
-from app.db.base_class import Base
-from app.db.session import engine
 
 # 设置日志
 setup_logging()
@@ -58,8 +56,8 @@ app = FastAPI(
         "[Vue web client](https://github.com/Cosymentx/TubeSavely-Vue), "
         "[Python backend](https://github.com/Cosymentx/TubeSavely-Server)."
     ),
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=None if settings.PRODUCTION else "/docs",
+    redoc_url=None if settings.PRODUCTION else "/redoc",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     lifespan=lifespan
 )
@@ -74,8 +72,8 @@ if settings.BACKEND_CORS_ORIGINS:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[str(origin) for origin in settings.BACKEND_CORS_ORIGINS],
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "Accept", "Origin"],
         expose_headers=["Location", "Authorization"],  # 重要：暴露Location头
         max_age=3600,
     )
@@ -85,10 +83,6 @@ if settings.BACKEND_CORS_ORIGINS:
 
 # Include API router
 app.include_router(api_router, prefix=settings.API_V1_STR)
-
-# Create database tables
-if not os.environ.get("VERCEL"):
-    Base.metadata.create_all(bind=engine)
 
 if __name__ == '__main__':
     import uvicorn
