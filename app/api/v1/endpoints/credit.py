@@ -61,9 +61,9 @@ def add_user_credits(
     action: str,
     description: str = None,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_user)
+    current_user: User = Depends(deps.get_current_superuser)
 ):
-    """Add credits to current user's account"""
+    """Administrative credit adjustment endpoint."""
     try:
         if credits <= 0:
             return ApiResponse(
@@ -72,7 +72,7 @@ def add_user_credits(
                 data=None
             )
             
-        add_credits(db, current_user, credits, action, description)
+        add_credits(db, current_user, credits, action, type=0, description=description)
         return ApiResponse(data={"credits": credits})
     except Exception as e:
         logger.error(f"Error adding credits: {str(e)}")
@@ -88,9 +88,9 @@ def deduct_user_credits(
     action: str,
     description: str = None,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_user)
+    current_user: User = Depends(deps.get_current_superuser)
 ):
-    """Deduct credits from current user's account"""
+    """Administrative credit deduction endpoint."""
     try:
         if credits <= 0:
             return ApiResponse(
