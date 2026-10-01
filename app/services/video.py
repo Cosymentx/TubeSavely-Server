@@ -1,4 +1,6 @@
 import re
+import ipaddress
+import socket
 from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 from typing import Dict, Any
@@ -20,6 +22,36 @@ import os
 
 logger = logging.getLogger(__name__)
 
+def _ensure_public_video_url(url: str) -> None:
+    """Reject local/private network targets before handing URLs to extractors."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").strip().lower()
+    if parsed.scheme not in ("http", "https") or not host:
+        raise VideoParseError("video_url_invalid", "请输入有效的视频链接。", 400)
+    if host == "localhost" or host.endswith(".localhost"):
+        raise VideoParseError("video_url_forbidden", "该视频地址不可访问。", 400)
+
+    try:
+        addresses = {item[4][0] for item in socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)}
+    except socket.gaierror:
+        raise VideoParseError("video_url_invalid", "无法解析视频地址。", 400) from None
+
+    for address in addresses:
+        try:
+            ip = ipaddress.ip_address(address)
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise VideoParseError("video_url_forbidden", "该视频地址不可访问。", 400)
+
+
 async def extract(url: str,
                           current_user: User,
                           db: Session = None):
@@ -28,6 +60,7 @@ async def extract(url: str,
     """
     try:
         url = extract_url(url)
+        _ensure_public_video_url(url)
         if urlparse(url).scheme in ['http', 'https'] or url.startswith('www.'):
             video_data = await dispatch(url)
             if video_data is None:
@@ -63,6 +96,7 @@ async def dispatch(url: str):
     """
     try:
         url = extract_url(url)
+        _ensure_public_video_url(url)
         if platform_of(url):
             try:
                 return await short_video.parse(url)
