@@ -2,12 +2,13 @@ from datetime import timedelta
 import logging
 import traceback
 from typing import Optional, Dict, Any
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.core.auth import authenticate_user, create_access_token, verify_password
 from app.core.config import settings
+from app.core.security import create_refresh_token, verify_refresh_token
 from app.core import deps
 from app.schemas.user import UserCreate, UserLogin, User, SetPasswordRequest,UserUpdate, ChangePasswordRequest
 from app.schemas.response import ApiResponse
@@ -15,6 +16,28 @@ from app.services.user import create_user, get_user_by_email, update_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def set_refresh_cookie(response: Response, email: str) -> None:
+    token = create_refresh_token(email)
+    response.set_cookie(
+        key="refresh_token",
+        value=token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        httponly=True,
+        secure=settings.PRODUCTION,
+        samesite="none" if settings.PRODUCTION else "lax",
+        path=f"{settings.API_V1_STR}/auth",
+    )
+
+
+def clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key="refresh_token",
+        path=f"{settings.API_V1_STR}/auth",
+        secure=settings.PRODUCTION,
+        samesite="none" if settings.PRODUCTION else "lax",
+    )
 
 def create_user_response(user: User) -> Dict[str, Any]:
     """
@@ -89,6 +112,7 @@ async def authenticate_and_get_token(
 @router.post("/register", response_model=ApiResponse[dict])
 async def register(
     user_in: UserCreate,
+    response: Response,
     db: Session = Depends(deps.get_db)
 ):
     """
@@ -120,7 +144,8 @@ async def register(
         # Generate access token and create response
         access_token = generate_access_token(user)
         response_data = create_auth_response(user, access_token)
-        
+        set_refresh_cookie(response, user.email)
+
         return ApiResponse(
             data=response_data
         )
@@ -135,6 +160,7 @@ async def register(
 @router.post("/login", response_model=ApiResponse[dict])
 async def login(
     login_data: UserLogin,
+    response: Response,
     db: Session = Depends(deps.get_db)
 ):
     """
@@ -153,7 +179,8 @@ async def login(
                 code=401,
                 msg="Incorrect email or password",
             )
-            
+
+        set_refresh_cookie(response, login_data.email)
         return ApiResponse(
             data=response_data
         )
@@ -168,6 +195,7 @@ async def login(
 
 @router.post("/oauth/token", response_model=ApiResponse[dict])
 async def oauth_login(
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(deps.get_db)
 ):
@@ -187,7 +215,8 @@ async def oauth_login(
                 code=401,
                 msg="Invalid credentials",
             )
-            
+
+        set_refresh_cookie(response, form_data.username)
         return ApiResponse(
             data=response_data
         )
@@ -199,6 +228,37 @@ async def oauth_login(
             code=500,
             msg=f"Login failed: {str(e)}",
         )
+
+@router.post("/refresh", response_model=ApiResponse[dict])
+async def refresh_access_token(
+    request: Request,
+    response: Response,
+    db: Session = Depends(deps.get_db),
+):
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        return ApiResponse(code=401, msg="Refresh session is missing", data=None)
+
+    email = verify_refresh_token(refresh_token)
+    if not email:
+        clear_refresh_cookie(response)
+        return ApiResponse(code=401, msg="Refresh session has expired", data=None)
+
+    user = get_user_by_email(db, email)
+    if not user or not user.is_active:
+        clear_refresh_cookie(response)
+        return ApiResponse(code=401, msg="Account is unavailable", data=None)
+
+    access_token = generate_access_token(user)
+    set_refresh_cookie(response, user.email)
+    return ApiResponse(data=create_auth_response(user, access_token))
+
+
+@router.post("/logout", response_model=ApiResponse[dict])
+async def logout(response: Response):
+    clear_refresh_cookie(response)
+    return ApiResponse()
+
 
 @router.post("/set-password", response_model=ApiResponse[dict])
 async def set_password(
