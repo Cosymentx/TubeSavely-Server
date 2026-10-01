@@ -141,9 +141,8 @@ def get_user_payments(
     )
 
 def verify_payment_sign(data: dict, sign: str) -> bool:
-    """验证支付回调签名"""
-    # TODO: 实现签名验证逻辑
-    return True
+    """Legacy helper retained for compatibility; never accept unverifiable callbacks."""
+    return False
 
 
 def refresh_checkout_payment(db: Session, payment: Payment) -> Payment:
