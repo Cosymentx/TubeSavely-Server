@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # Facebook OAuth2
     FACEBOOK_CLIENT_ID: str = os.environ.get("FACEBOOK_CLIENT_ID", "")
     FACEBOOK_CLIENT_SECRET: str = os.environ.get("FACEBOOK_CLIENT_SECRET", "")
-    FACEBOOK_GRAPH_VERSION: str = os.environ.get("FACEBOOK_GRAPH_VERSION", "v23.0")
+    FACEBOOK_GRAPH_VERSION: str = os.environ.get("FACEBOOK_GRAPH_VERSION") or "v12.0"
     FACEBOOK_AUTHORIZE_URL: str = os.environ.get(
         "FACEBOOK_AUTHORIZE_URL",
         f"https://www.facebook.com/{FACEBOOK_GRAPH_VERSION}/dialog/oauth"
