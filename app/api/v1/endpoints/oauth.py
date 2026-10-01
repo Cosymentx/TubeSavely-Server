@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Response, Request, Response
+from fastapi import APIRouter, Depends, Response, Request
 from sqlalchemy.orm import Session
 from typing import Dict
 import requests
@@ -30,16 +30,6 @@ async def get_oauth_url(provider: str, state: str, response: Response):
     Generate OAuth URL with state parameter
     """
     try:
-        saved_state = request.cookies.get("oauth_state")
-        if not saved_state or not hmac.compare_digest(saved_state, state):
-            return ApiResponse(code=400, msg="OAuth state mismatch", data=None)
-        response.delete_cookie(
-            key="oauth_state",
-            path=f"{settings.API_V1_STR}/auth/oauth",
-            secure=settings.PRODUCTION,
-            samesite="none" if settings.PRODUCTION else "lax",
-        )
-
         oauth = get_oauth_provider(provider)
 
         if provider == "google":
@@ -121,6 +111,16 @@ async def oauth_callback(
     Process OAuth callback
     """
     try:
+        saved_state = request.cookies.get("oauth_state")
+        if not saved_state or not hmac.compare_digest(saved_state, state):
+            return ApiResponse(code=400, msg="OAuth state mismatch", data=None)
+        response.delete_cookie(
+            key="oauth_state",
+            path=f"{settings.API_V1_STR}/auth/oauth",
+            secure=settings.PRODUCTION,
+            samesite="none" if settings.PRODUCTION else "lax",
+        )
+
         oauth = get_oauth_provider(provider)
 
         if provider == "google":
