@@ -37,7 +37,8 @@ def complete_video_transaction(
             video_id=video_data.video_id,
             platform=video_data.platform,
             author=video_data.author,
-            formats=[f.model_dump() for f in video_data.formats],
+            formats=[{**f.model_dump(), 'download_headers': f.download_headers,
+                      'direct_download': f.direct_download} for f in video_data.formats],
             credits_cost=credits_cost,
         )
         db.add(video)

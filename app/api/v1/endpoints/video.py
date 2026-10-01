@@ -42,7 +42,7 @@ async def download_video(
 ):
     """Download a format from this user's parse history. No additional credits."""
     await download_rate_limiter(request, response)
-    return await video_download.download(db, current_user.id, payload.url, payload.format_id)
+    return await video_download.download(db, current_user.id, payload.url, payload.format_id, payload.include_audio)
 
 async def rate_limiter(request: Request, response: Response):
     if FastAPILimiter.redis is None:

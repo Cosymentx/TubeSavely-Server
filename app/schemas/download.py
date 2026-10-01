@@ -5,6 +5,7 @@ from typing import Optional
 class VideoDownloadRequest(BaseModel):
     url: str
     format_id: str
+    include_audio: bool = True
 
 class DownloadBase(BaseModel):
     video_url: str

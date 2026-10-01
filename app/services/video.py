@@ -155,6 +155,10 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
         }
 
         platform = platform_of(url)
+        if is_youtube_url(url) and not cookies_file:
+            # Match the public VISIONOS stream path used by YoutubeExplode;
+            # avoid an additional unauthenticated Web player request.
+            ydl_opts['extractor_args'] = {'youtube': {'player_client': ['visionos']}}
         if platform:
             ydl_opts['proxy'] = short_video.platform_proxy(platform) or ''
             ydl_opts['http_headers'] = {'User-Agent': short_video.USER_AGENT}
@@ -164,6 +168,7 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
             ydl_opts['cookiefile'] = cookies_file
             logger.info('A platform cookie file is configured')
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            used_direct_connection = not bool(ydl_opts.get('proxy'))
             if platform:
                 for cookie in short_video.load_cookies(platform):
                     ydl.cookiejar.set_cookie(cookie)
@@ -175,6 +180,7 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
                         logger.warning('Configured video proxy failed; trying a direct connection')
                         with yt_dlp.YoutubeDL({**ydl_opts, 'proxy': ''}) as direct_ydl:
                             data = direct_ydl.extract_info(url, download=False)
+                            used_direct_connection = True
                     else:
                         raise
                 if 'formats' in data and len(data['formats']) > 0:
@@ -188,7 +194,7 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
                     processed_formats = []
                     for format in data['formats']:
                         # 只处理包含视频流的格式
-                        if format.get('vcodec') != 'none':
+                        if format.get('url') and format.get('ext') not in ('mhtml', 'jpg', 'png'):
                             processed_format = {
                                 'format_id': format.get('format_id'),
                                 'format_note': format.get('format_note'),
@@ -205,6 +211,14 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
                                 'dynamic_range': format.get('dynamic_range'),
                                 'resolution': format.get('resolution')
                             }
+                            original_headers = {**(data.get('http_headers') or {}), **(format.get('http_headers') or {})}
+                            processed_format['download_headers'] = {
+                                key: value for key, value in original_headers.items()
+                                if key.lower() in ('user-agent', 'referer', 'origin', 'accept', 'accept-language')
+                                and isinstance(value, str) and '\r' not in value and '\n' not in value
+                            }
+                            processed_format['direct_download'] = used_direct_connection
+                            processed_format['protocol'] = format.get('protocol')
                             # 确保格式包含分辨率信息
                             # if processed_format['height'] or processed_format['width']:
                             processed_formats.append(processed_format)
@@ -217,7 +231,10 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
                     logger.info(f'yt_dlp extract success {data.get("title", "")}')
                     formats_dict = [VideoFormatBase(**format_data) for format_data in processed_formats]
                     # 然后在返回前将它们转换为字典
-                    formats_serializable = [format_obj.dict() for format_obj in formats_dict]
+                    formats_serializable = [{**format_obj.model_dump(),
+                        'download_headers': format_obj.download_headers,
+                        'direct_download': format_obj.direct_download,
+                    } for format_obj in formats_dict]
                     return {
                         'url': url,
                         'video_id': data['video_id'],

@@ -1,5 +1,5 @@
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 class VideoFormatBase(BaseModel):
@@ -17,6 +17,9 @@ class VideoFormatBase(BaseModel):
     acodec: Optional[str] = None
     dynamic_range: Optional[str] = None
     resolution: Optional[str] = None
+    protocol: Optional[str] = None
+    download_headers: dict[str, str] = Field(default_factory=dict, exclude=True)
+    direct_download: Optional[bool] = Field(default=None, exclude=True)
 
 class VideoBase(BaseModel):
     url: Optional[str] = None

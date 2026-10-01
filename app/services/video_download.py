@@ -14,6 +14,8 @@ from starlette.responses import StreamingResponse
 from app.models.video import Video
 from app.services.short_video import USER_AGENT, platform_proxy
 from app.services.video_urls import extract_url, platform_of
+from app.services.video_runtime import is_youtube_url
+from app.services import youtube_download
 
 
 async def public_media_url(url):
@@ -37,13 +39,15 @@ def owned_format(db, user_id, original_url, format_id):
     selected = next((entry for entry in (record.formats or []) if entry.get('format_id') == format_id), None)
     if not selected or not selected.get('url'):
         raise HTTPException(404, 'This format is unavailable. Please parse the video again.')
-    if urlsplit(selected['url']).path.lower().endswith(('.m3u8', '.mpd')):
+    if not is_youtube_url(record.original_url) and urlsplit(selected['url']).path.lower().endswith(('.m3u8', '.mpd')):
         raise HTTPException(422, 'Select a direct media format for browser download.')
     return record, selected
 
 
-async def download(db, user_id, original_url, format_id):
+async def download(db, user_id, original_url, format_id, include_audio=True):
     record, selected = owned_format(db, user_id, original_url, format_id)
+    if is_youtube_url(record.original_url):
+        return await youtube_download.download(record, selected, include_audio)
     platform = platform_of(record.original_url)
     headers = {'User-Agent': USER_AGENT, 'Accept-Encoding': 'identity'}
     if platform:
