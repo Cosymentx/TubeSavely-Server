@@ -104,9 +104,8 @@ class AirwallexService:
             return None
     
     def verify_webhook_signature(self, signature: str, payload: str) -> bool:
-        """验证 Webhook 签名"""
-        # TODO: 实现签名验证逻辑
-        return True
+        """Fail closed until Airwallex webhook signature verification is implemented."""
+        return False
     
     def handle_webhook(self, db: Session, event_type: str, data: Dict[str, Any]) -> Optional[Payment]:
         """处理 Webhook 回调"""
