@@ -218,24 +218,93 @@ async def payment_webhook(
                     
         elif provider == "stripe":
             payload = await request.body()
-            signature = request.headers.get('stripe-signature', '')
+            signature = request.headers.get("stripe-signature", "")
             if not settings.STRIPE_WEBHOOK_SECRET:
-                return PlainTextResponse('Webhook is not configured', status_code=503)
+                return PlainTextResponse("Webhook is not configured", status_code=503)
             try:
                 event = stripe.Webhook.construct_event(payload, signature, settings.STRIPE_WEBHOOK_SECRET)
             except (ValueError, stripe.error.SignatureVerificationError):
-                return PlainTextResponse('Invalid webhook signature', status_code=400)
+                return PlainTextResponse("Invalid webhook signature", status_code=400)
+
             obj = event.data.object
-            order_id = obj.get('metadata', {}).get('order_id')
-            payment = payment_service.get_payment_by_order_id(db, order_id) if order_id else None
-            if payment and payment.payment_method == 'stripe':
-                if event.type == 'checkout.session.completed':
-                    if obj.get('id') == payment.provider_checkout_id:
-                        payment_service.refresh_checkout_payment(db, payment)
-                elif event.type == 'payment_intent.succeeded':
-                    if (obj.get('currency', '').upper() == payment.currency
-                            and obj.get('amount_received') == int(payment.amount * 100)):
-                        payment_service.update_payment_status(db, payment, obj['id'], payment_service.PaymentStatus.COMPLETED)
+            event_id = getattr(event, "id", None) or event.get("id")
+            event_type = getattr(event, "type", None) or event.get("type")
+            payment = None
+
+            if event_type in {"checkout.session.completed", "payment_intent.succeeded"}:
+                order_id = obj.get("metadata", {}).get("order_id")
+                payment = payment_service.get_payment_by_order_id(db, order_id) if order_id else None
+            elif event_type == "charge.refunded":
+                payment = payment_service.get_payment_by_trade_no(db, obj.get("payment_intent"))
+            elif event_type in {"charge.dispute.created", "charge.dispute.closed"}:
+                payment = payment_service.get_payment_by_trade_no(db, obj.get("payment_intent"))
+
+            if not payment:
+                # Keep a non-sensitive audit fingerprint even when the event cannot be mapped.
+                if payment_service.record_provider_event(db, "stripe", event_id, event_type, payload):
+                    db.commit()
+                return ApiResponse()
+
+            if not payment_service.record_provider_event(db, "stripe", event_id, event_type, payload, payment):
+                db.rollback()
+                return ApiResponse()
+
+            if event_type == "checkout.session.completed":
+                if obj.get("id") == payment.provider_checkout_id:
+                    payment_service.refresh_checkout_payment(db, payment)
+                else:
+                    db.commit()
+
+            elif event_type == "payment_intent.succeeded":
+                if (
+                    obj.get("currency", "").upper() == payment.currency
+                    and obj.get("amount_received") == int(payment.amount * 100)
+                ):
+                    payment_service.update_payment_status(
+                        db, payment, obj["id"], payment_service.PaymentStatus.COMPLETED
+                    )
+                else:
+                    db.commit()
+
+            elif event_type == "charge.refunded":
+                fully_refunded = (
+                    obj.get("currency", "").upper() == payment.currency
+                    and int(obj.get("amount_refunded") or 0) >= int(payment.amount * 100)
+                )
+                if fully_refunded:
+                    payment_service.reverse_payment_credits(
+                        db,
+                        payment,
+                        status=payment_service.PaymentStatus.REFUNDED,
+                        reason="Stripe full refund",
+                    )
+                else:
+                    db.commit()
+
+            elif event_type == "charge.dispute.created":
+                payment_service.reverse_payment_credits(
+                    db,
+                    payment,
+                    status=payment_service.PaymentStatus.DISPUTED,
+                    reason=f"Stripe dispute: {obj.get('reason') or 'unknown'}",
+                )
+
+            elif event_type == "charge.dispute.closed":
+                dispute_status = obj.get("status")
+                if dispute_status == "won":
+                    payment_service.restore_disputed_credits(db, payment, "Stripe dispute won")
+                elif dispute_status in {"lost", "warning_closed"}:
+                    payment_service.reverse_payment_credits(
+                        db,
+                        payment,
+                        status=payment_service.PaymentStatus.DISPUTED,
+                        reason=f"Stripe dispute closed: {dispute_status}",
+                    )
+                else:
+                    db.commit()
+            else:
+                db.commit()
+
             return ApiResponse()
 
         elif provider == "alipay":
@@ -266,16 +335,54 @@ async def payment_webhook(
         elif provider == "creem":
             payload = await request.body()
             if not settings.CREEM_WEBHOOK_SECRET:
-                return PlainTextResponse('Webhook is not configured', status_code=503)
-            if not creem_service.verify_signature(payload, request.headers.get('creem-signature', '')):
-                return PlainTextResponse('Invalid webhook signature', status_code=400)
+                return PlainTextResponse("Webhook is not configured", status_code=503)
+            if not creem_service.verify_signature(payload, request.headers.get("creem-signature", "")):
+                return PlainTextResponse("Invalid webhook signature", status_code=400)
+
             data = json.loads(payload)
-            if data.get('eventType') == 'checkout.completed':
-                checkout = data.get('object', {})
-                order_id = checkout.get('metadata', {}).get('order_id')
+            event_id = data.get("id")
+            event_type = data.get("eventType")
+            obj = data.get("object", {})
+            payment = None
+
+            if event_type == "checkout.completed":
+                order_id = obj.get("metadata", {}).get("order_id")
                 payment = payment_service.get_payment_by_order_id(db, order_id) if order_id else None
-                if payment and payment.payment_method == 'creem' and checkout.get('id') == payment.provider_checkout_id:
+            elif event_type in {"refund.created", "dispute.created"}:
+                transaction = obj.get("transaction", {}) or {}
+                payment = payment_service.get_payment_by_trade_no(db, transaction.get("id"))
+
+            if not payment:
+                if payment_service.record_provider_event(db, "creem", event_id, event_type, payload):
+                    db.commit()
+                return ApiResponse()
+
+            if not payment_service.record_provider_event(db, "creem", event_id, event_type, payload, payment):
+                db.rollback()
+                return ApiResponse()
+
+            if event_type == "checkout.completed":
+                if obj.get("id") == payment.provider_checkout_id:
                     payment_service.refresh_checkout_payment(db, payment)
+                else:
+                    db.commit()
+            elif event_type == "refund.created" and obj.get("status") == "succeeded":
+                payment_service.reverse_payment_credits(
+                    db,
+                    payment,
+                    status=payment_service.PaymentStatus.REFUNDED,
+                    reason=f"Creem refund: {obj.get('reason') or 'customer refund'}",
+                )
+            elif event_type == "dispute.created":
+                payment_service.reverse_payment_credits(
+                    db,
+                    payment,
+                    status=payment_service.PaymentStatus.DISPUTED,
+                    reason="Creem dispute",
+                )
+            else:
+                db.commit()
+
             return ApiResponse()
 
         # elif provider == "wechat":
