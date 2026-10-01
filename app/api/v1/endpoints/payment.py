@@ -167,7 +167,7 @@ def create_payment(
     except Exception as e:
         return ApiResponse(
             code=500,
-            msg=f"Failed to create payment: {str(e)}",
+            msg="Failed to create payment",
             data=None
         )
 
@@ -186,6 +186,11 @@ async def payment_webhook(
         db: Database session
     """
     try:
+        # PayPal and Airwallex are not advertised as active payment methods because
+        # their webhook verification path is not production-ready. Fail closed.
+        if provider in {"paypal", "airwallex"}:
+            return PlainTextResponse("Payment provider is not enabled", status_code=503)
+
         if provider == "paypal":
             # Get PayPal payment_id
             data = await request.json()
@@ -326,7 +331,7 @@ async def payment_webhook(
     except Exception as e:
         return ApiResponse(
             code=500,
-            msg=f"Failed to process {provider} webhook: {str(e)}",
+            msg="Failed to process payment webhook",
         )
 
 @router.get("/orders", response_model=ApiResponse[List[Payment]])
