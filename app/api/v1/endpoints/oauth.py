@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, Response, Response
+from fastapi import APIRouter, Depends, Response, Request, Response
 from sqlalchemy.orm import Session
 from typing import Dict
 import requests
+import hmac
 from urllib.parse import urlencode
 
 from app.core import deps
@@ -24,11 +25,21 @@ def get_oauth_redirect_url(provider: str) -> str:
 
 
 @router.get("/{provider}/url", response_model=ApiResponse[Dict[str, str]])
-async def get_oauth_url(provider: str, state: str):
+async def get_oauth_url(provider: str, state: str, response: Response):
     """
     Generate OAuth URL with state parameter
     """
     try:
+        saved_state = request.cookies.get("oauth_state")
+        if not saved_state or not hmac.compare_digest(saved_state, state):
+            return ApiResponse(code=400, msg="OAuth state mismatch", data=None)
+        response.delete_cookie(
+            key="oauth_state",
+            path=f"{settings.API_V1_STR}/auth/oauth",
+            secure=settings.PRODUCTION,
+            samesite="none" if settings.PRODUCTION else "lax",
+        )
+
         oauth = get_oauth_provider(provider)
 
         if provider == "google":
@@ -78,6 +89,15 @@ async def get_oauth_url(provider: str, state: str):
                 data=None
             )
 
+        response.set_cookie(
+            key="oauth_state",
+            value=state,
+            max_age=600,
+            httponly=True,
+            secure=settings.PRODUCTION,
+            samesite="none" if settings.PRODUCTION else "lax",
+            path=f"{settings.API_V1_STR}/auth/oauth",
+        )
         return ApiResponse(data={"url": authorize_url})
 
     except Exception as e:
@@ -94,6 +114,7 @@ async def oauth_callback(
         code: str,
         state: str,
         response: Response,
+        request: Request,
         db: Session = Depends(deps.get_db)
 ):
     """
