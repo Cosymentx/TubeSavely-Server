@@ -462,8 +462,14 @@ def delete(id: int, current_user: User, db: Session = None) -> bool:
         if not db.query(Video).join(Video.users).filter(Video.id == id, User.id == current_user.id).first():
             return False
 
-        # 删除视频记录
-        db.delete(video)
+        # Remove only the current user's history relation. A shared video
+        # record must remain available to other users who purchased/parsed it.
+        video.users.remove(current_user)
+        db.flush()
+
+        if video.users.count() == 0:
+            db.delete(video)
+
         db.commit()
         return True
     except Exception as e:
