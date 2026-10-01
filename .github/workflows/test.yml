@@ -22,7 +22,7 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379/15
       BACKEND_CORS_ORIGINS: '["https://tube-savely-vue.vercel.app","http://localhost:5173"]'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
