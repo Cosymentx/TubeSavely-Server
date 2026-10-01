@@ -32,13 +32,16 @@ async def download_rate_limiter(request: Request, response: Response):
     await RateLimiter(times=10, seconds=60)(request, response)
 
 
-@router.post('/download', dependencies=[Depends(download_rate_limiter)])
+@router.post('/download')
 async def download_video(
     payload: VideoDownloadRequest,
+    request: Request,
+    response: Response,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_user),
 ):
     """Download a format from this user's parse history. No additional credits."""
+    await download_rate_limiter(request, response)
     return await video_download.download(db, current_user.id, payload.url, payload.format_id)
 
 async def rate_limiter(request: Request, response: Response):
