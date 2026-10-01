@@ -17,6 +17,7 @@ from app.services.video import (
     test_proxy_connection
 )
 from app.services.video_runtime import VideoParseError
+from app.services.credit import InsufficientCreditsError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -81,7 +82,7 @@ def create_video(
         video = create_video_service(db, video_in, current_user)
         return ApiResponse(data=video)
     except Exception as e:
-        if e.__class__.__name__ == "InsufficientCreditsError":
+        if isinstance(e, InsufficientCreditsError):
             return ApiResponse(code=400, msg="Insufficient credits to download this video", data=None)
         logger.error(f"Error creating video: {str(e)}")
         return ApiResponse(
