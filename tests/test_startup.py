@@ -1,72 +1,100 @@
-import builtins
-import importlib
 import os
 import unittest
 from unittest.mock import AsyncMock, patch
 
+os.environ.update({
+    'VERCEL': '1', 'PRODUCTION': 'true', 'DATABASE_URL': 'sqlite://',
+    'SECRET_KEY': 'temporary-test-secret',
+    'BACKEND_CORS_ORIGINS': '["https://tube-savely-vue.vercel.app"]',
+})
+
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+from app.main import app
+from app.core.deps import get_db
+from app.db.session import get_db as health_db
+from app.db.base_class import Base
+from app.services.payments.alipay import AlipayService
 
-with patch.dict(os.environ, {"REDIS_URL": "", "BACKEND_CORS_ORIGINS": '["https://frontend.example.com"]'}):
-    import main
 
+class FullBackendTests(unittest.TestCase):
+    def setUp(self):
+        self.engine = create_engine('sqlite://', connect_args={'check_same_thread': False}, poolclass=StaticPool)
+        Base.metadata.create_all(self.engine)
+        factory = sessionmaker(bind=self.engine)
 
-class StartupTests(unittest.TestCase):
-    def test_application_import_does_not_require_uvicorn(self):
-        original_import = builtins.__import__
+        def database():
+            with factory() as session:
+                yield session
 
-        def without_uvicorn(name, *args, **kwargs):
-            if name == 'uvicorn':
-                raise ModuleNotFoundError("No module named 'uvicorn'")
-            return original_import(name, *args, **kwargs)
+        app.dependency_overrides[get_db] = database
+        app.dependency_overrides[health_db] = database
+        self.redis = AsyncMock()
+        self.patches = [
+            patch('app.main.redis.from_url', return_value=self.redis),
+            patch('app.main.FastAPILimiter.init', new=AsyncMock()),
+            patch('app.main.FastAPILimiter.close', new=AsyncMock()),
+            patch('app.main.FastAPILimiter.redis', self.redis),
+        ]
+        for item in self.patches:
+            item.start()
+        self.client = TestClient(app)
+        self.client.__enter__()
 
-        with patch.dict(os.environ, {"REDIS_URL": "", "BACKEND_CORS_ORIGINS": '["https://frontend.example.com"]'}):
-            with patch('builtins.__import__', side_effect=without_uvicorn):
-                importlib.reload(main)
-        self.assertIsNotNone(main.app)
+    def tearDown(self):
+        self.client.__exit__(None, None, None)
+        for item in reversed(self.patches):
+            item.stop()
+        app.dependency_overrides.clear()
+        self.engine.dispose()
 
-    def test_docs_and_health_without_redis(self):
-        with patch.object(main, 'REDIS_URL', ''):
-            with patch.object(main.redis, 'from_url') as redis_factory:
-                with TestClient(main.app) as client:
-                    self.assertEqual(client.get('/docs').status_code, 200)
-                    self.assertEqual(client.get('/openapi.json').status_code, 200)
-                    self.assertEqual(client.get('/health').json()['services']['redis'], 'disabled')
-                    self.assertEqual(client.get('/test', params={'params': 'hello'}).json(), {'hi': 'hello'})
-                redis_factory.assert_not_called()
+    def test_docs_include_all_business_routes(self):
+        self.assertEqual(self.client.get('/docs').status_code, 200)
+        paths = self.client.get('/api/v1/openapi.json').json()['paths']
+        for path in ['/api/v1/auth/register', '/api/v1/auth/login', '/api/v1/users/profile',
+                     '/api/v1/videos/parse', '/api/v1/payments/create', '/api/v1/payments/orders',
+                     '/api/v1/credits/', '/api/v1/tasks/convert', '/api/v1/feedback/']:
+            self.assertIn(path, paths)
 
-    def test_cors_preflight(self):
-        with patch.object(main, 'REDIS_URL', ''):
-            with TestClient(main.app) as client:
-                response = client.options('/parse', headers={
-                    'Origin': 'https://frontend.example.com',
-                    'Access-Control-Request-Method': 'GET',
-                })
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.headers['access-control-allow-origin'], 'https://frontend.example.com')
+    def test_register_login_profile_and_payment_history(self):
+        account = {'email': 'deployment@example.com', 'username': 'deployment', 'password': 'test-password-123'}
+        registration = self.client.post('/api/v1/auth/register', json=account).json()
+        self.assertEqual(registration['code'], 200, registration.get('msg'))
+        login = self.client.post('/api/v1/auth/login', json={k: account[k] for k in ['email', 'password']}).json()
+        self.assertEqual(login['code'], 200, login.get('msg'))
+        headers = {'Authorization': 'Bearer ' + login['data']['access_token']}
+        profile = self.client.get('/api/v1/users/profile', headers=headers).json()
+        self.assertEqual(profile['data']['email'], account['email'])
+        orders = self.client.get('/api/v1/payments/orders', headers=headers).json()
+        self.assertEqual(orders['code'], 200)
+        self.assertEqual(orders['data'], [])
 
-    def test_redis_failure_keeps_docs_available_and_blocks_limited_routes(self):
-        connection = AsyncMock()
-        with patch.object(main, 'REDIS_URL', 'redis://test.invalid:6379'):
-            with patch.object(main.redis, 'from_url', return_value=connection):
-                with patch.object(main.FastAPILimiter, 'init', new=AsyncMock(side_effect=ConnectionError('unavailable'))):
-                    with TestClient(main.app) as client:
-                        self.assertEqual(client.get('/docs').status_code, 200)
-                        self.assertEqual(client.get('/health').json()['status'], 'unhealthy')
-                        self.assertEqual(client.get('/test', params={'params': 'hello'}).status_code, 503)
-        connection.aclose.assert_awaited_once()
+    def test_protected_routes_require_login(self):
+        self.assertEqual(self.client.get('/api/v1/users/profile').status_code, 401)
+        self.assertEqual(self.client.get('/api/v1/payments/orders').status_code, 401)
 
-    def test_configured_redis_applies_rate_limiter(self):
-        connection = AsyncMock()
-        with patch.object(main, 'REDIS_URL', 'redis://test.invalid:6379'):
-            with patch.object(main.redis, 'from_url', return_value=connection):
-                with patch.object(main.FastAPILimiter, 'init', new=AsyncMock()):
-                    with patch.object(main.FastAPILimiter, 'close', new=AsyncMock()) as close:
-                        with patch.object(main, 'RateLimiter', return_value=AsyncMock()) as factory:
-                            with TestClient(main.app) as client:
-                                self.assertEqual(client.get('/test', params={'params': 'hello'}).status_code, 200)
-                            factory.assert_called_once_with(times=1, seconds=5)
-                            factory.return_value.assert_awaited_once()
-                        close.assert_awaited_once()
+    def test_frontend_cors_preflight(self):
+        response = self.client.options('/api/v1/auth/login', headers={
+            'Origin': 'https://tube-savely-vue.vercel.app',
+            'Access-Control-Request-Method': 'POST',
+            'Access-Control-Request-Headers': 'content-type,authorization',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['access-control-allow-origin'], 'https://tube-savely-vue.vercel.app')
+
+    def test_health_checks_database_and_redis(self):
+        response = self.client.get('/api/v1/health')
+        self.assertEqual(response.json()['status'], 'healthy')
+
+    def test_alipay_credentials_are_loaded_only_on_payment_use(self):
+        with patch('app.services.payments.alipay.AliPay') as factory:
+            service = AlipayService()
+            factory.assert_not_called()
+            self.assertIs(service.client, factory.return_value)
+            self.assertIs(service.client, factory.return_value)
+            factory.assert_called_once()
 
 
 if __name__ == '__main__':

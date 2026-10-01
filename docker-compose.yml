@@ -1,0 +1,12 @@
+services:
+  api:
+    build: .
+    ports:
+      - "9527:9527"
+    env_file:
+      - .env.production
+    volumes:
+      - ./downloads:/app/downloads
+      - ./logs:/app/logs
+      - ./cookies:/app/cookies
+    restart: unless-stopped

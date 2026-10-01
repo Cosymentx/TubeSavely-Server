@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "main.py": {
+      "maxDuration": 300,
+      "excludeFiles": "{tests/**,migrations/**,alembic/**,scripts/**,.env*,cookies/**,downloads/**,logs/**,.agents/**,skills-lock.json}"
+    }
+  }
+}

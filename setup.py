@@ -1,23 +1,11 @@
-from setuptools import setup, find_packages
+from pathlib import Path
+from setuptools import find_namespace_packages, setup
 
+requirements = [line.strip() for line in Path('requirements.txt').read_text().splitlines()
+                if line.strip() and not line.lstrip().startswith('#')]
 setup(
-    name='tube-saverx',
-    version='1.0',
-    author='Wuhan Raccoon Network',
-    author_email='xhxdeveloper@163.com',
-    description='A shortvideo parse download support 1000+ site',
-    url="https://skylands.cn",
-    packages=find_packages(),
-    python_requires='>=3.9',
-    install_requires=[
-        'fastapi',
-        'requests',
-        'networking',
-        'parsel',
-        'lxml',
-        'PyExecJS',
-        'redis',
-        'ffmpeg',
-    ],
+    name='tubesavely-server', version='1.0.0',
+    description='Complete TubeSavely API backend',
+    packages=find_namespace_packages(include=['app', 'app.*']),
+    python_requires='>=3.13', install_requires=requirements,
 )
-
