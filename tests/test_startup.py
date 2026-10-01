@@ -78,6 +78,30 @@ class FullBackendTests(unittest.TestCase):
         self.assertEqual(orders['code'], 200)
         self.assertEqual(orders['data'], [])
 
+    def test_refresh_cookie_rotates_access_token(self):
+        account = {'email': 'refresh@example.com', 'username': 'refresh', 'password': 'test-password-123'}
+        registration = self.client.post('/api/v1/auth/register', json=account)
+        self.assertEqual(registration.json()['code'], 200)
+        self.assertIn('refresh_token', registration.cookies)
+
+        # Simulate a later browser request that relies on the HttpOnly cookie.
+        response = self.client.post('/api/v1/auth/refresh')
+        body = response.json()
+        self.assertEqual(body['code'], 200, body.get('msg'))
+        self.assertTrue(body['data']['access_token'])
+        self.assertEqual(body['data']['user']['email'], account['email'])
+        self.assertIn('refresh_token', response.cookies)
+
+    def test_refresh_requires_valid_cookie(self):
+        client = TestClient(app)
+        client.__enter__()
+        try:
+            response = client.post('/api/v1/auth/refresh').json()
+            self.assertEqual(response['code'], 401)
+        finally:
+            client.__exit__(None, None, None)
+
+
     def test_protected_routes_require_login(self):
         self.assertEqual(self.client.get('/api/v1/users/profile').status_code, 401)
         self.assertEqual(self.client.get('/api/v1/payments/orders').status_code, 401)
