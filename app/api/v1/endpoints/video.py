@@ -137,8 +137,10 @@ def read_video_history(
         )
 
 @router.get("/test-proxy", response_model=ApiResponse)
-async def test_proxy():
-    """测试代理连接是否正常工作"""
+async def test_proxy(
+    current_user: User = Depends(deps.get_current_superuser)
+):
+    """Administrator-only proxy connectivity diagnostic."""
     try:
         result = await test_proxy_connection()
         if result:
