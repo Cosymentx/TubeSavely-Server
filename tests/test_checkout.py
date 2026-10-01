@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.models.credit import Credit
 from app.models.credit_amount import CreditAmount
 from app.models.payment import Payment
+from app.services import payment as payment_service
 from sqlalchemy.orm import sessionmaker
 
 
@@ -87,3 +88,95 @@ class CheckoutTests(FullBackendTests):
         with patch('app.services.payments.stripe.StripeService.retrieve_checkout', return_value=checkout):
             result = self.client.get(f"/api/v1/payments/status/{order_id}", headers=headers).json()
         self.assertEqual(result['data']['status'], 'pending')
+
+    def test_refund_reverses_credits_once_and_allows_debt(self):
+        headers = self.create_account()
+        self.add_price()
+        with patch.object(settings, "STRIPE_SECRET_KEY", "sk_test_configured"):
+            with patch.object(payment_endpoint.stripe_service, "create_checkout_session", return_value={
+                "url": "https://checkout.stripe.com/c/pay/session", "id": "cs_refund_123",
+            }):
+                created = self.client.post(
+                    "/api/v1/payments/create?credit_amount_id=1&currency=USD&payment_method=stripe",
+                    headers=headers,
+                ).json()
+
+        order_id = created["data"]["order_id"]
+        checkout = {
+            "id": "cs_refund_123", "payment_status": "paid", "currency": "usd",
+            "amount_total": 999, "metadata": {"order_id": order_id},
+            "payment_intent": {"id": "pi_refund_123"},
+        }
+        with patch("app.services.payments.stripe.StripeService.retrieve_checkout", return_value=checkout):
+            self.client.get(f"/api/v1/payments/status/{order_id}", headers=headers)
+
+        with sessionmaker(bind=self.engine)() as session:
+            payment = session.query(Payment).filter_by(order_id=order_id).one()
+            user = session.get(__import__("app.models.user", fromlist=["User"]).User, payment.user_id)
+            user.credits = 10
+            session.commit()
+
+            payment_service.reverse_payment_credits(
+                session, payment,
+                status=payment_service.PaymentStatus.REFUNDED,
+                reason="test refund",
+            )
+            payment_service.reverse_payment_credits(
+                session, payment,
+                status=payment_service.PaymentStatus.REFUNDED,
+                reason="duplicate refund",
+            )
+
+            session.refresh(user)
+            session.refresh(payment)
+            self.assertEqual(user.credits, -90)
+            self.assertEqual(payment.status, "refunded")
+            self.assertTrue(payment.credit_reversal_applied)
+            self.assertEqual(
+                session.query(Credit).filter_by(user_id=user.id, action="PaymentReversal").count(),
+                1,
+            )
+
+    def test_won_dispute_restores_reversed_credits_once(self):
+        headers = self.create_account()
+        self.add_price()
+        with patch.object(settings, "STRIPE_SECRET_KEY", "sk_test_configured"):
+            with patch.object(payment_endpoint.stripe_service, "create_checkout_session", return_value={
+                "url": "https://checkout.stripe.com/c/pay/session", "id": "cs_dispute_123",
+            }):
+                created = self.client.post(
+                    "/api/v1/payments/create?credit_amount_id=1&currency=USD&payment_method=stripe",
+                    headers=headers,
+                ).json()
+
+        order_id = created["data"]["order_id"]
+        checkout = {
+            "id": "cs_dispute_123", "payment_status": "paid", "currency": "usd",
+            "amount_total": 999, "metadata": {"order_id": order_id},
+            "payment_intent": {"id": "pi_dispute_123"},
+        }
+        with patch("app.services.payments.stripe.StripeService.retrieve_checkout", return_value=checkout):
+            self.client.get(f"/api/v1/payments/status/{order_id}", headers=headers)
+
+        with sessionmaker(bind=self.engine)() as session:
+            payment = session.query(Payment).filter_by(order_id=order_id).one()
+            user = session.get(__import__("app.models.user", fromlist=["User"]).User, payment.user_id)
+            starting = user.credits
+
+            payment_service.reverse_payment_credits(
+                session, payment,
+                status=payment_service.PaymentStatus.DISPUTED,
+                reason="test dispute",
+            )
+            payment_service.restore_disputed_credits(session, payment)
+            payment_service.restore_disputed_credits(session, payment)
+
+            session.refresh(user)
+            session.refresh(payment)
+            self.assertEqual(user.credits, starting)
+            self.assertEqual(payment.status, "completed")
+            self.assertFalse(payment.credit_reversal_applied)
+            self.assertEqual(
+                session.query(Credit).filter_by(user_id=user.id, action="DisputeWon").count(),
+                1,
+            )
