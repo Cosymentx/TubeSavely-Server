@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 os.environ.update({
     'VERCEL': '1', 'PRODUCTION': 'true', 'DATABASE_URL': 'sqlite://',
-    'SECRET_KEY': 'temporary-test-secret',
+    'SECRET_KEY': 'temporary-test-secret-that-is-long-enough-for-ci',
     'BACKEND_CORS_ORIGINS': '["https://tube-savely-vue.vercel.app"]',
 })
 
@@ -50,13 +50,14 @@ class FullBackendTests(unittest.TestCase):
         app.dependency_overrides.clear()
         self.engine.dispose()
 
-    def test_docs_include_all_business_routes(self):
-        self.assertEqual(self.client.get('/docs').status_code, 200)
+    def test_production_openapi_exposes_only_enabled_business_routes(self):
+        self.assertEqual(self.client.get('/docs').status_code, 404)
         paths = self.client.get('/api/v1/openapi.json').json()['paths']
         for path in ['/api/v1/auth/register', '/api/v1/auth/login', '/api/v1/users/profile',
                      '/api/v1/videos/parse', '/api/v1/payments/create', '/api/v1/payments/orders',
-                     '/api/v1/credits/', '/api/v1/tasks/convert', '/api/v1/feedback/']:
+                     '/api/v1/credits/', '/api/v1/feedback/']:
             self.assertIn(path, paths)
+        self.assertNotIn('/api/v1/tasks/convert', paths)
 
     def test_register_login_profile_and_payment_history(self):
         account = {'email': 'deployment@example.com', 'username': 'deployment', 'password': 'test-password-123'}
