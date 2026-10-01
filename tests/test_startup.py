@@ -45,7 +45,7 @@ class FullBackendTests(unittest.TestCase):
         ]
         for item in self.patches:
             item.start()
-        self.client = TestClient(app)
+        self.client = TestClient(app, base_url='https://testserver')
         self.client.__enter__()
 
     def tearDown(self):
@@ -93,7 +93,7 @@ class FullBackendTests(unittest.TestCase):
         self.assertIn('refresh_token', response.cookies)
 
     def test_refresh_requires_valid_cookie(self):
-        client = TestClient(app)
+        client = TestClient(app, base_url='https://testserver')
         client.__enter__()
         try:
             response = client.post('/api/v1/auth/refresh').json()
