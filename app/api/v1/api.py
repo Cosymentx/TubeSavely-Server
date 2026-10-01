@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.api.v1 import health
+from app.core.config import settings
 
 from .endpoints import auth, user, video, oauth, feedback, credit_amount, credit, payment, task
 
@@ -15,7 +16,8 @@ api_router.include_router(oauth.router, prefix="/auth/oauth", tags=["oauth"])
 # Resource routes
 api_router.include_router(user.router, prefix="/users", tags=["users"])
 api_router.include_router(video.router, prefix="/videos", tags=["videos"])
-api_router.include_router(task.router, prefix="/tasks", tags=["tasks"])
+if settings.ENABLE_TASKS:
+    api_router.include_router(task.router, prefix="/tasks", tags=["tasks"])
 
 # Business routes
 api_router.include_router(credit_amount.router, prefix="/credit_amount", tags=["credit_amount"])
