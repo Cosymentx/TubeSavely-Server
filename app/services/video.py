@@ -413,34 +413,30 @@ def get_video_history(
     limit: int = 20,
 ) -> Dict[str, Any]:
     """Get user's videos with pagination"""
-    from app.db.session import SessionLocal
     from math import ceil
-    from typing import Dict, Any
 
     if offset < 1:
         offset = 1
+    limit = max(1, min(limit, 100))
 
-    db = SessionLocal()
-    try:
-        query = db.query(Video).filter(Video.users.any(id=user.id))
+    query = db.query(Video).filter(Video.users.any(id=user.id))
+    total = query.count()
+    pages = ceil(total / limit) if total else 0
 
-        total = query.count()
-        pages = ceil(total / limit)
+    records = (
+        query.order_by(Video.created_at.desc())
+        .offset((offset - 1) * limit)
+        .limit(limit)
+        .all()
+    )
 
-        records = query.order_by(Video.created_at.desc())\
-            .offset((offset - 1) * limit)\
-            .limit(limit)\
-            .all()
-
-        return {
-            "records": records,
-            "total": total,
-            "size": limit,
-            "current": offset,
-            "pages": pages
-        }
-    finally:
-        db.close()
+    return {
+        "records": records,
+        "total": total,
+        "size": limit,
+        "current": offset,
+        "pages": pages,
+    }
 
 
 def delete(id: int, current_user: User, db: Session = None) -> bool:
