@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # JWT配置
     SECRET_KEY: str = os.environ.get("SECRET_KEY", "")
     ALGORITHM: str = os.environ.get("ALGORITHM", "HS256")
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24 * 7))
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", 60 * 24))
     
     # CORS配置
     BACKEND_CORS_ORIGINS: list[str] = json.loads(os.environ.get("BACKEND_CORS_ORIGINS", '["http://localhost:5173", "http://127.0.0.1:5173"]'))
