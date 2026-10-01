@@ -14,6 +14,7 @@ from app.models.credit import Credit
 from app.schemas.video import VideoBase
 from app.services import video_download as download
 from app.services.video_transaction import complete_video_transaction
+from app.services.video import delete as delete_video_history
 from app.services.credit import InsufficientCreditsError
 from app.api.v1.endpoints.video import router
 from app.api.v1.endpoints import video as video_endpoint
@@ -67,6 +68,30 @@ class OwnershipAndCredits(unittest.TestCase):
             complete_video_transaction(self.db, self.owner, self.video())
         self.assertEqual(self.db.query(Video).count(), 1)
         self.assertEqual(self.db.query(Credit).count(), 1)
+
+    def test_deleting_history_does_not_delete_shared_video(self):
+        record = Video(
+            original_url=URL,
+            title="shared",
+            duration="9",
+            video_id="shared-id",
+            platform="tiktok",
+            credits_cost=3,
+            formats=[{"format_id": "play", "url": "https://media.example/shared.mp4"}],
+        )
+        record.users.append(self.owner)
+        record.users.append(self.other)
+        self.db.add(record)
+        self.db.commit()
+        video_id = record.id
+
+        self.assertTrue(delete_video_history(video_id, self.owner, self.db))
+        remaining = self.db.query(Video).filter(Video.id == video_id).one()
+        self.assertEqual(remaining.users.count(), 1)
+        self.assertEqual(remaining.users.first().id, self.other.id)
+
+        self.assertTrue(delete_video_history(video_id, self.other, self.db))
+        self.assertIsNone(self.db.query(Video).filter(Video.id == video_id).first())
 
     def test_balance_is_refreshed_after_another_transaction_changes_it(self):
         self.assertEqual(self.owner.credits, 3)
