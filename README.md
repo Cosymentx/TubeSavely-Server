@@ -67,11 +67,18 @@ TubeSavely 是一套完整的跨平台音视频解析与下载解决方案，由
 
 > ⚠️ 注意：执行 `pip install -U yt-dlp` **不会**更新本服务实际调用的解析器。
 
-- **EJS 与 Deno 支持**：YouTube 解析需要 `yt-dlp-ejs==0.8.0` 和 Deno（固定为 `2.9.5`），两者随 `requirements.txt` 安装。Deno 必须位于服务进程的 `PATH` 中。
+- **EJS 与 Deno 支持**：YouTube 解析需要 `yt-dlp-ejs==0.8.0` 和 Deno（固定为 `2.9.5`），两者随 `requirements.txt` 安装。本地运行可使用 `PATH` 中的 Deno。Vercel 构建通过 `scripts/prepare_runtime.py` 将 Deno 复制到 `app/runtime_bin/` 并纳入函数包，运行时不依赖构建机器的 scripts 目录；二进制文件不提交 Git。
 - **自定义解析器维护**：更新内置源码时，务必保留 `extractor/extend/` 下的自定义解析器及项目特定扩展，并将上游模块导入调整为相对导入。
 - **Cookies 与代理配置**：
-  - 若 YouTube 触发 `Sign in to confirm you're not a bot`，请将 Netscape 格式 Cookies 挂载至 `cookies/youtube.txt`（同时支持 `cookies/tiktok.txt` 和 `cookies/douyin.txt`）。
-  - 在 `app/services/video.py` 的 `ydl_opts` 中配置外网解析代理。
+  - 若 YouTube 触发 `Sign in to confirm you're not a bot`，本地或 Docker 可将 Netscape 格式 Cookies 挂载至 `cookies/youtube.txt`。Vercel 使用加密的 Production 环境变量 `YOUTUBE_COOKIES_BASE64`，配置后重新部署。Cookies 导出步骤见 [yt-dlp 官方说明](https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies)。
+  - `YOUTUBE_COOKIES_BASE64` 是 Netscape Cookies 文件的 Base64，程序会写入权限为 600 的临时文件，并在解析完成或失败后删除，不记录 Cookie 内容。TubeSavely 的登录 Token 不会将 YouTube 登录会话传给解析器。
+  - 解析代理通过 `VIDEO_PROXY` 环境变量配置；YouTube 代理连接超时会尝试直接连接。接口分别返回登录验证、私有视频及网络错误，不再统一将平台失败提示为 URL 不正确。
+
+在 macOS 上，可以将 Cookie 文件编码后复制到剪贴板，再粘贴进 Vercel 环境变量：
+
+```bash
+base64 < youtube.txt | tr -d '\n' | pbcopy
+```
 
 #### 环境依赖与内核校验
 ```bash

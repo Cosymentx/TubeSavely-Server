@@ -15,3 +15,5 @@ build/
 dist/
 .agents/
 skills-lock.json
+app/runtime_bin/
+.vercel

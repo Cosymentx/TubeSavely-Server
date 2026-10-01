@@ -6,7 +6,7 @@ import traceback
 import logging
 from app.vendor import yt_dlp
 from app.core.config import settings
-from deno import find_deno_bin
+from app.services.video_runtime import ExtractorLogger, VideoParseError, extraction_error, is_youtube_url, javascript_runtimes, youtube_cookie_file
 from app.models.video import Video
 from app.schemas.video import VideoCreate, VideoBase, VideoFormatBase
 from app.models.user import User
@@ -47,6 +47,8 @@ async def extract(url: str,
                 return _create_video_base(video_data)
         else:
             return 'the parameter {url} is invalid.'
+    except VideoParseError:
+        raise
     except Exception as e:
         logger.error(f'extract exception {str(e)}')
         return None
@@ -61,22 +63,37 @@ async def dispatch(url: str):
         if data is None:
             data = openapi_parse(url)
         return data
+    except VideoParseError:
+        raise
     except Exception as e:
         logger.error(f'dispatch exception {str(e)}')
         return None
 
 
 async def yt_dlp_parse(url: str):
+    encoded = settings.YOUTUBE_COOKIES_BASE64 if is_youtube_url(url) else ''
+    with youtube_cookie_file(encoded) as cookiefile:
+        return await _yt_dlp_parse(url, cookiefile)
+
+
+async def _yt_dlp_parse(url: str, cookie_override=None):
     """
     使用yt-dlp解析视频信息
     """
     try:
-        cookies_file = _get_cookies_file(url)
+        cookies_file = cookie_override or _get_cookies_file(url)
+        runtimes = javascript_runtimes()
+        if is_youtube_url(url) and not runtimes:
+            raise VideoParseError('video_runtime_missing', '服务器的视频解析运行环境不可用，请管理员检查 Deno 构建配置。')
+        logger.info('yt-dlp JavaScript runtime: %s', ','.join(runtimes) or 'unavailable')
 
         ydl_opts = {
             'quiet': True,
+            'logger': ExtractorLogger(),
             'cachedir': False,
-            'js_runtimes': {'deno': {'path': str(find_deno_bin())}},
+            'js_runtimes': runtimes,
+            'socket_timeout': 8,
+            'extractor_retries': 0,
             'extract_flat': False,  # 修改为False以获取完整的formats信息
             'force_generic_extractor': False,
              'proxy': settings.VIDEO_PROXY,
@@ -85,10 +102,18 @@ async def yt_dlp_parse(url: str):
         # 如果存在对应的cookies文件，添加到配置中
         if cookies_file:
             ydl_opts['cookiefile'] = cookies_file
-            logger.info(f'yt_dlp ydl_opts: {ydl_opts}')
+            logger.info('A platform cookie file is configured')
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             try:
-                data = ydl.extract_info(url, download=False)
+                try:
+                    data = ydl.extract_info(url, download=False)
+                except Exception as first_error:
+                    if is_youtube_url(url) and settings.VIDEO_PROXY and extraction_error(first_error).reason == 'video_network_error':
+                        logger.warning('Configured video proxy failed; trying a direct connection')
+                        with yt_dlp.YoutubeDL({**ydl_opts, 'proxy': ''}) as direct_ydl:
+                            data = direct_ydl.extract_info(url, download=False)
+                    else:
+                        raise
                 if 'formats' in data and len(data['formats']) > 0:
                     # 确保返回的数据包含所有必要字段
                     if 'id' in data:
@@ -135,7 +160,7 @@ async def yt_dlp_parse(url: str):
                         'title': data.get('title', ''),
                         'description': data.get('description'),
                         'thumbnail': data.get('thumbnail', ''),
-                        'duration': str(int(data.get('duration', 0))),
+                        'duration': str(int(data.get('duration') or 0)),
                         'platform': data.get('platform',''),
                         'formats': formats_serializable,
                         'view_count' : str(data.get('view_count') if data.get('view_count') is not None else 0),
@@ -146,10 +171,20 @@ async def yt_dlp_parse(url: str):
                     logger.info('yt_dlp parse no formats found, trying extend parse')
                     return await yt_dlp_extend_parse(url)
             except Exception as e:
-                logger.error(f'yt_dlp parse exception {str(e)}')
+                if is_youtube_url(url):
+                    error = extraction_error(e)
+                    logger.warning('YouTube extraction failed: %s', error.reason)
+                    raise error from None
+                logger.error('yt-dlp extraction failed (%s)', type(e).__name__)
                 return await yt_dlp_extend_parse(url)
+    except VideoParseError:
+        raise
     except Exception as e:
-        logger.error(f'yt_dlp parse exception {str(e)}')
+        if is_youtube_url(url):
+            if isinstance(e, FileNotFoundError):
+                raise VideoParseError('video_runtime_missing', '服务器的视频解析运行环境不可用，请管理员检查 Deno 构建配置。') from None
+            raise extraction_error(e) from None
+        logger.error('yt-dlp initialization failed (%s)', type(e).__name__)
         return await yt_dlp_extend_parse(url)
 
 
@@ -396,7 +431,7 @@ def _get_cookies_file(url: str) -> str:
         logger.info(f"Using cookies file: {cookie_path}")
         return cookie_path
     else:
-        logger.error(f"Cookies file not found or not readable: {cookie_path}")
+        logger.debug('No platform cookie file is available')
         return None
 
 async def test_proxy_connection():

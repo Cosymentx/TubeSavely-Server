@@ -1,8 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "python3 scripts/prepare_runtime.py",
   "functions": {
     "main.py": {
       "maxDuration": 300,
+      "includeFiles": "app/runtime_bin/**",
       "excludeFiles": "{tests/**,migrations/**,alembic/**,scripts/**,.env*,cookies/**,downloads/**,logs/**,.agents/**,skills-lock.json}"
     }
   }

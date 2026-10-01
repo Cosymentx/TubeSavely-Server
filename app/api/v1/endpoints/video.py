@@ -16,6 +16,7 @@ from app.services.video import (
     delete,
     test_proxy_connection
 )
+from app.services.video_runtime import VideoParseError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -51,6 +52,9 @@ async def parse(
             )
 
         return ApiResponse(data=data)
+    except VideoParseError as e:
+        logger.warning('Video extraction refused: %s', e.reason)
+        return ApiResponse(code=e.code, msg=str(e), data=None)
     except Exception as e:
         logger.error(f"Error parsing video URL: {str(e)}")
         return ApiResponse(
