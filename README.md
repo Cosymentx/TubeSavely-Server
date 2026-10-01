@@ -131,6 +131,11 @@ const profile = await fetch(`${API}/users/profile`, {
 支付返回地址由 `FRONTEND_URL` 控制，支付通知地址由 `API_URL` 控制。
 各支付平台还需配置对应密钥及回调 URL。积分购买档位通过
 `/api/v1/credit_amount` 配置，并填写实际支付产品 ID；新库没有旧购买档位。
+目前数据库内已配置 100、500、1000、2000 积分四档。USD 价格与 Creem
+现有产品相对应；支付方式接口会按已配置的支付渠道和币种返回可选方式。
+
+Stripe Checkout 订单使用 Stripe 签名 Webhook 和服务端订单金额核验。Alipay 回调也会核对签名、订单归属与金额。
+Creem 签名密钥通过 `CREEM_WEBHOOK_SECRET` 配置；用户返回结账页面时，后端会向 Creem 查询订单状态并再次核对商品、金额和订单 ID。
 
 ### 验证部署
 
@@ -142,6 +147,15 @@ vercel deploy --prod --scope cosyment-s-team
 测试使用临时 SQLite 数据库及模拟 Redis，覆盖注册、登录、用户资料、
 订单查询、接口文档、跨域、支付客户端初始化和 yt-dlp 依赖。
 测试不向真实支付平台发起扣款，也不修改生产数据库。
+
+提交前运行完整编译、依赖与业务测试：
+
+```bash
+sh scripts/ci-test.sh
+```
+
+`.github/workflows/test.yml` 会在 master 的 push 和 pull request 时运行同一脚本；
+`.github/dependabot.yml` 每周检查 Python 包和 GitHub Actions 更新。
 
 ## 项目结构
 
