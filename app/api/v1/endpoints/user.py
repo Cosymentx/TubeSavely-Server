@@ -16,7 +16,7 @@ def read_users(
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_user)
+    current_user: User = Depends(deps.get_current_superuser)
 ):
     """
     Retrieve users.

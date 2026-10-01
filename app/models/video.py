@@ -37,3 +37,7 @@ class Video(Base):
 
     def __repr__(self):
         return f"<Video(title={self.title}, platform={self.platform}, video_id={self.video_id})>"
+
+    @property
+    def url(self):
+        return self.original_url

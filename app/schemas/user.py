@@ -1,5 +1,5 @@
-from pydantic import BaseModel, EmailStr
-from typing import Optional
+from pydantic import BaseModel, EmailStr, ConfigDict
+from typing import Optional, Literal
 from datetime import datetime
 
 class UserBase(BaseModel):
@@ -8,16 +8,15 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
-    is_superuser: Optional[bool] = False
+    is_superuser: Literal[False] = False
     is_active: Optional[bool] = True
 
 class UserUpdate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
     username: Optional[str] = None
     email: Optional[EmailStr] = None
     password: Optional[str] = None
-    credits: Optional[int] = None
     avatar: Optional[str] = None
-    is_active: Optional[bool] = None
 
 class SetPasswordRequest(BaseModel):
     new_password: str

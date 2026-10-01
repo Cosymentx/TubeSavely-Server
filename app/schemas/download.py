@@ -2,6 +2,10 @@ from datetime import datetime
 from pydantic import BaseModel
 from typing import Optional
 
+class VideoDownloadRequest(BaseModel):
+    url: str
+    format_id: str
+
 class DownloadBase(BaseModel):
     video_url: str
     video_title: str

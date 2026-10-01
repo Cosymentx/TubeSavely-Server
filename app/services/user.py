@@ -167,7 +167,7 @@ def create_user(db: Session, user_in: UserCreate) -> User:
             db=db,
             email=user_in.email,
             username=user_in.username,
-            is_superuser=user_in.is_superuser,
+            is_superuser=False,
             has_password=True,
             hashed_password=hashed_password
         )

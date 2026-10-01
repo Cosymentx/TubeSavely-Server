@@ -21,6 +21,7 @@ def complete_video_transaction(
         locked_user = (
             db.query(User)
             .filter(User.id == user.id)
+            .populate_existing()
             .with_for_update()
             .one()
         )

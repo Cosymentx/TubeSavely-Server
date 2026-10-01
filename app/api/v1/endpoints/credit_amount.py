@@ -2,6 +2,7 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.deps import get_db
+from app.core import deps
 import logging
 from app.models import credit_amount
 from app.schemas.response import ApiResponse
@@ -47,7 +48,7 @@ def get_credit_amount(credit_amount_id: int, db: Session = Depends(get_db)):
         logger.error(f"Error getting credit amount: {e}")
         return ApiResponse(code=500, msg=f"{e}")
 
-@router.post("/", response_model=ApiResponse[CreditAmount])
+@router.post("/", response_model=ApiResponse[CreditAmount], dependencies=[Depends(deps.get_current_superuser)])
 def create_credit_amount(credit_amount: CreditAmountCreate, db: Session = Depends(get_db)):
     """创建新的积分价格配置"""
     try:
@@ -57,7 +58,7 @@ def create_credit_amount(credit_amount: CreditAmountCreate, db: Session = Depend
         logger.error(f"Error creating credit amount: {e}")
         return ApiResponse(code=500, msg=f"{e}")
 
-@router.put("/{credit_amount_id}", response_model=ApiResponse[CreditAmount])
+@router.put("/{credit_amount_id}", response_model=ApiResponse[CreditAmount], dependencies=[Depends(deps.get_current_superuser)])
 def update_credit_amount(credit_amount_id: int, credit_amount: CreditAmountUpdate, db: Session = Depends(get_db)):
     """更新积分价格配置"""
     try:
@@ -69,7 +70,7 @@ def update_credit_amount(credit_amount_id: int, credit_amount: CreditAmountUpdat
         logger.error(f"Error updating credit amount: {e}")
         return ApiResponse(code=500, msg=f"{e}")
 
-@router.delete("/{credit_amount_id}")
+@router.delete("/{credit_amount_id}", dependencies=[Depends(deps.get_current_superuser)])
 def delete_credit_amount(credit_amount_id: int, db: Session = Depends(get_db)):
     """删除积分价格配置"""
     try:

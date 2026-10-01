@@ -17,6 +17,7 @@ from app.core.deps import get_db
 from app.db.session import get_db as health_db
 from app.db.base_class import Base
 from app.services.payments.alipay import AlipayService
+from fastapi.middleware.cors import CORSMiddleware
 
 
 class FullBackendTests(unittest.TestCase):
@@ -32,7 +33,11 @@ class FullBackendTests(unittest.TestCase):
         app.dependency_overrides[get_db] = database
         app.dependency_overrides[health_db] = database
         self.redis = AsyncMock()
+        cors = next(middleware for middleware in app.user_middleware if middleware.cls is CORSMiddleware)
+        # Each test owns its CORS fixture regardless of module import order.
+        app.middleware_stack = None
         self.patches = [
+            patch.dict(cors.kwargs, {'allow_origins': ['https://tube-savely-vue.vercel.app', 'https://tubesavely.vercel.app']}),
             patch('app.main.redis.from_url', return_value=self.redis),
             patch('app.main.FastAPILimiter.init', new=AsyncMock()),
             patch('app.main.FastAPILimiter.close', new=AsyncMock()),
@@ -48,6 +53,7 @@ class FullBackendTests(unittest.TestCase):
         for item in reversed(self.patches):
             item.stop()
         app.dependency_overrides.clear()
+        app.middleware_stack = None
         self.engine.dispose()
 
     def test_production_openapi_exposes_only_enabled_business_routes(self):

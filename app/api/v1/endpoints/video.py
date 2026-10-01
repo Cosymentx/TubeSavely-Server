@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from fastapi_limiter.depends import RateLimiter
 from fastapi_limiter import FastAPILimiter
 from app.core import deps
+from app.core.config import settings
 from app.schemas.user import User
 from app.schemas.video import Video, VideoCreate, VideoBase
 from app.schemas.response import ApiResponse
@@ -18,9 +19,21 @@ from app.services.video import (
 )
 from app.services.video_runtime import VideoParseError
 from app.services.credit import InsufficientCreditsError
+from app.schemas.download import VideoDownloadRequest
+from app.services import video_download
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.post('/download')
+async def download_video(
+    payload: VideoDownloadRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
+):
+    """Download a format from this user's parse history. No additional credits."""
+    return await video_download.download(db, current_user.id, payload.url, payload.format_id)
 
 async def rate_limiter(request: Request, response: Response):
     if FastAPILimiter.redis is None:
@@ -36,6 +49,8 @@ async def parse(
 ):
     """Parse video URL to get video information"""
     try:
+        if current_user is not None and current_user.credits < settings.VIDEO_PARSE_CREDITS_COST:
+            return ApiResponse(code=402, msg='积分不足，请充值后重新解析。', data=None)
         logger.info(f"comming here: {url}")
         if not url:
             return ApiResponse(

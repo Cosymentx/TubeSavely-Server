@@ -86,6 +86,15 @@ class UrlAndMediaTests(unittest.TestCase):
         self.assertEqual(result['formats'][1]['filesize'], 3456)
         self.assertEqual(result['duration'], '12')
 
+    def test_tiktok_empty_caption_uses_author_not_internal_id(self):
+        target = item('tiktok')
+        target['desc'] = ''
+        target['author'] = {'nickname': 'まいか', 'uniqueId': 'mai.mai3588'}
+        result = sv.parse_item(target, 'tiktok', ID, TT)
+        self.assertEqual(result['title'], 'まいか 的视频')
+        self.assertEqual(result['description'], '')
+        self.assertNotIn(ID, result['title'])
+
     def test_missing_dimensions_remain_unknown(self):
         target = {'id': ID, 'video': {'playAddr': 'https://media.example/a.mp4'}}
         result = sv.parse_item(target, 'tiktok', ID, TT)
@@ -183,6 +192,12 @@ class SigningTests(unittest.TestCase):
 
 
 class AsyncParserTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        # Parser tests mock transport; DNS must be deterministic as well.
+        self.dns = patch.object(video.socket, 'getaddrinfo', return_value=[(2, 1, 6, '', ('93.184.216.34', 443))])
+        self.dns.start()
+        self.addCleanup(self.dns.stop)
+
     async def test_multi_hop_relative_redirect_and_single_session(self):
         session = SimpleNamespace(get=AsyncMock(side_effect=[
             response('', 302, {'location': '/second'}),

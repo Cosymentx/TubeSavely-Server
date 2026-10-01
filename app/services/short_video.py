@@ -279,11 +279,15 @@ def parse_item(item, platform, video_id, original_url):
         platform == 'tiktok' and urlsplit(x['url']).hostname == 'www.tiktok.com',
     ), reverse=True)
     author = item.get('author') or {}
+    caption = next((value.strip() for value in (item.get('desc'), item.get('title'), item.get('description'))
+                    if isinstance(value, str) and value.strip()), '')
+    author_name = author.get('nickname') or author.get('uniqueId') or ''
+    fallback_title = f'{author_name} 的视频' if author_name else f'{NAMES[platform]} 视频'
     return {
         'url': original_url, 'video_id': video_id, 'platform': platform,
-        'title': item.get('desc') or f'{NAMES[platform]} {video_id}',
-        'description': item.get('desc') or '', 'thumbnail': next(iter(thumbnail), ''),
-        'duration': str(int(duration)), 'author': author.get('nickname') or author.get('uniqueId') or '',
+        'title': caption or fallback_title,
+        'description': caption, 'thumbnail': next(iter(thumbnail), ''),
+        'duration': str(int(duration)), 'author': author_name,
         'formats': formats, 'view_count': number(stats.get('play_count', stats.get('playCount'))) or 0,
         'like_count': number(stats.get('digg_count', stats.get('diggCount'))) or 0,
     }

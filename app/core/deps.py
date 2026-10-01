@@ -36,7 +36,9 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
         
-    return user 
+    if not user.is_active:
+        raise HTTPException(403, 'This account is disabled.')
+    return user
 
 async def get_current_superuser(
     current_user: User = Depends(get_current_user)

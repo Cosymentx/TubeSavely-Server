@@ -17,6 +17,7 @@ from app.models.user import User
 from app.vendor.yt_dlp.extractor.extend import parse_video_share_url
 import requests
 from app.services.video_transaction import complete_video_transaction
+from app.services.credit import InsufficientCreditsError
 import os
 
 
@@ -83,6 +84,8 @@ async def extract(url: str,
                 return _create_video_base(video_data)
         else:
             return 'the parameter {url} is invalid.'
+    except InsufficientCreditsError:
+        raise VideoParseError('insufficient_credits', '积分不足，请充值后重新解析。', 402) from None
     except VideoParseError:
         raise
     except Exception as e:
