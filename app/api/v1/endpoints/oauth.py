@@ -93,7 +93,7 @@ async def get_oauth_url(provider: str, state: str, response: Response):
     except Exception as e:
         return ApiResponse(
             code=500,
-            msg=f"Failed to generate {provider} OAuth URL: {str(e)}",
+            msg=f"Failed to generate {provider} OAuth URL",
             data=None
         )
 
@@ -246,6 +246,6 @@ async def oauth_callback(
     except Exception as e:
         return ApiResponse(
             code=500,
-            msg=f"Failed to process {provider} OAuth callback: {str(e)}",
+            msg=f"Failed to process {provider} OAuth callback",
             data=None
         )
