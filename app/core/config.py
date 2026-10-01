@@ -139,6 +139,7 @@ class Settings(BaseSettings):
     VIDEO_PARSE_CREDITS_COST: int = int(os.environ.get("VIDEO_PARSE_CREDITS_COST", "3"))
     CONVERT_TASK_CREDITS_COST: int = int(os.environ.get("CONVERT_TASK_CREDITS_COST", "5"))
     GENERATE_TASK_CREDITS_COST: int = int(os.environ.get("GENERATE_TASK_CREDITS_COST", "10"))
+    ENABLE_TASKS: bool = os.environ.get("ENABLE_TASKS", "false").lower() == "true"
     FALLBACK_PARSE_CLIENT_ID: str = os.environ.get("FALLBACK_PARSE_CLIENT_ID", "")
     FALLBACK_PARSE_SIGN: str = os.environ.get("FALLBACK_PARSE_SIGN", "")
 
