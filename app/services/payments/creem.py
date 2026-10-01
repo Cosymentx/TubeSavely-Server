@@ -1,6 +1,9 @@
 from typing import Optional
 from decimal import Decimal
 import requests
+import hashlib
+import hmac
+import json
 from app.core.config import settings
 from app.models.payment import Payment
 
@@ -16,43 +19,39 @@ class CreemService:
         self.return_url_template = f"{settings.FRONTEND_URL}/payment/result?internal_order_id={{order_id}}&status=success"
         self.notify_url = f"{settings.API_URL}/api/v1/payments/webhook/creem"
 
-    def create_payment(self, order_id: str, product_id:str) -> Optional[str]:
-        """创建Creem支付订单"""
+    def create_payment(self, order_id: str, product_id: str, customer_email: str = "") -> Optional[dict]:
         try:
-            return_url = self.return_url_template.format(order_id=order_id)
-            payload = {                
-                "product_id": product_id,
-                # "product_id": "prod_6VFJbvIHLkEkKdFYoJiAwi",
-                "customer":{
-                    "email": "user@example.com",
-                },
-                "custom_field": [
-                    {
-                        "type": "text",
-                        "key": "key",
-                        "optional": True,
-                        "label": "Remark",
-                        "text": {   
-                            "max_length": 123,
-                            "min_length": 123
-                        }
-                    }
-                ],
-                "success_url": return_url,
-                "metadata": {
-                    "order_id": order_id
-                }
+            payload = {
+                'product_id': product_id,
+                'request_id': order_id,
+                'units': 1,
+                'success_url': self.return_url_template.format(order_id=order_id),
+                'metadata': {'order_id': order_id},
             }
-
-            response = requests.post(self.base_url, json=payload, headers=self.headers)
-            if response.status_code == 200:
+            if customer_email:
+                payload['customer'] = {'email': customer_email}
+            response = requests.post(self.base_url, json=payload, headers=self.headers, timeout=20)
+            if response.status_code in (200, 201):
                 data = response.json()
-                return data.get("checkout_url")
-            print(f"Creem payment creation failed: {response.text}")
+                if data.get('checkout_url') and data.get('id'):
+                    return {'url': data['checkout_url'], 'id': data['id']}
             return None
-        except Exception as e:
-            print(f"Creem payment creation error: {str(e)}")
+        except Exception:
             return None
+
+    def retrieve_checkout(self, checkout_id: str) -> Optional[dict]:
+        try:
+            response = requests.get(self.base_url, params={'checkout_id': checkout_id},
+                                    headers=self.headers, timeout=20)
+            return response.json() if response.ok else None
+        except Exception:
+            return None
+
+    def verify_signature(self, payload: bytes, signature: str) -> bool:
+        if not settings.CREEM_WEBHOOK_SECRET or not signature:
+            return False
+        expected = hmac.new(settings.CREEM_WEBHOOK_SECRET.encode(), payload, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected, signature)
 
     def verify_payment(self, webhook_data: dict) -> tuple[bool, Optional[str], Optional[str]]:
         """

@@ -10,6 +10,7 @@ from app.models.payment import Payment
 from app.models.user import User
 from app.services.credit import add_credits
 from app.schemas.payment import PaymentCreate
+from app.models.credit import Credit
 
 # 支付状态枚举
 class PaymentStatus:
@@ -45,6 +46,7 @@ def create_payment(
             amount=validated_amount,
             credits=payment_create.credits,
             payment_method=payment_create.payment_method,
+            currency=payment_create.currency.upper(),
             status=PaymentStatus.PENDING
         )
         db.add(db_payment)
@@ -75,19 +77,19 @@ def update_payment_status(
 ) -> Payment:
     """更新支付状态"""
     try:
+        payment = db.query(Payment).filter(Payment.id == payment.id).populate_existing().with_for_update().one()
+        if status == PaymentStatus.COMPLETED and payment.status in (PaymentStatus.COMPLETED, PaymentStatus.REFUNDED):
+            db.commit()
+            db.refresh(payment)
+            return payment
         payment.trade_no = trade_no
         payment.status = status
         if status == PaymentStatus.COMPLETED:
             payment.paid_at = datetime.utcnow()
-            # 支付成功后给用户增加积分
-            add_credits(
-                db=db,
-                user=payment.user,
-                credits=payment.credits,
-                action="Recharge",
-                type=1,
-                description=f"Recharge {payment.credits} Credits"
-            )
+            db.query(User).filter(User.id == payment.user_id).update(
+                {User.credits: User.credits + payment.credits}, synchronize_session=False)
+            db.add(Credit(user_id=payment.user_id, credits=payment.credits,
+                          action='Recharge', type=1, description=f'Recharge {payment.credits} Credits'))
         db.commit()
         db.refresh(payment)
         return payment
@@ -108,6 +110,8 @@ def get_credit_amount_by_id(db: Session, credit_amount_id: int, currency: str) -
             status_code=400,
             detail=f"Invalid credit amount configuration. No price configuration found for ID {credit_amount_id}"
         )
+    if not credit_amount.is_active:
+        raise HTTPException(status_code=400, detail='This credit package is unavailable')
     
     # 根据货币类型返回对应价格和积分数量
     if currency.upper() == "CNY":
@@ -140,3 +144,45 @@ def verify_payment_sign(data: dict, sign: str) -> bool:
     """验证支付回调签名"""
     # TODO: 实现签名验证逻辑
     return True
+
+
+def refresh_checkout_payment(db: Session, payment: Payment) -> Payment:
+    """Confirm payment using the provider API before granting credits."""
+    if payment.status != PaymentStatus.PENDING or not payment.provider_checkout_id:
+        return payment
+    if payment.payment_method == 'stripe':
+        from app.services.payments.stripe import StripeService
+        checkout = StripeService().retrieve_checkout(payment.provider_checkout_id)
+        if not checkout or checkout.get('id') != payment.provider_checkout_id:
+            return payment
+        if checkout.get('payment_status') != 'paid':
+            return payment
+        if checkout.get('metadata', {}).get('order_id') != payment.order_id:
+            return payment
+        if checkout.get('currency', '').upper() != payment.currency:
+            return payment
+        if checkout.get('amount_total') != int(payment.amount * 100):
+            return payment
+        intent = checkout.get('payment_intent')
+        trade_no = intent.get('id') if isinstance(intent, dict) else intent
+        trade_no = trade_no or checkout['id']
+    elif payment.payment_method == 'creem':
+        from app.services.payments.creem import CreemService
+        checkout = CreemService().retrieve_checkout(payment.provider_checkout_id)
+        if not checkout or checkout.get('id') != payment.provider_checkout_id:
+            return payment
+        if checkout.get('status') != 'completed' or checkout.get('order', {}).get('status') != 'paid':
+            return payment
+        if checkout.get('metadata', {}).get('order_id') != payment.order_id:
+            return payment
+        product = checkout.get('product')
+        if not isinstance(product, dict) or product.get('id') != payment.provider_product_id:
+            return payment
+        if product.get('currency', '').upper() != payment.currency or product.get('price') != int(payment.amount * 100):
+            return payment
+        trade_no = checkout.get('order', {}).get('id')
+        if not trade_no:
+            return payment
+    else:
+        return payment
+    return update_payment_status(db, payment, trade_no, PaymentStatus.COMPLETED)

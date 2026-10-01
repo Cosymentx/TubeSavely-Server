@@ -15,6 +15,9 @@ class Payment(Base):
     amount = Column(Numeric(10, 2))  # 支付金额
     credits = Column(Integer)  # 购买的积分数量
     payment_method = Column(String(20))  # 支付方式：alipay, wechat, paypal, airwallex
+    currency = Column(String(3), nullable=False, default='USD', server_default='USD')
+    provider_checkout_id = Column(String(255), unique=True, index=True, nullable=True)
+    provider_product_id = Column(String(255), nullable=True)
     status = Column(String(20))  # 状态：pending, paid, failed, refunded
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     paid_at = Column(DateTime(timezone=True), nullable=True)  # 支付完成时间

@@ -51,16 +51,17 @@ class StripeService:
             print(f"Stripe refund error: {str(e)}")
             return False
 
-    def create_checkout_session(self, order_id: str, amount: Decimal, currency: str, description: str) -> Optional[str]:
+    def create_checkout_session(self, order_id: str, amount: Decimal, currency: str, description: str, customer_email: str = "") -> Optional[dict]:
         """创建Stripe结账会话（用于快速集成）"""
         try:            
             amount_cents = int(amount * 100)
             session = stripe.checkout.Session.create(
                 payment_method_types=["card"],
+                customer_email=customer_email or None,
                 payment_intent_data={"metadata": {"order_id": order_id}},
                 line_items=[{
                     "price_data": {
-                        "currency": currency,
+                        "currency": currency.lower(),
                         "unit_amount": amount_cents,
                         "product_data": {
                             "name": description,
@@ -73,9 +74,15 @@ class StripeService:
                 cancel_url=f"{settings.FRONTEND_URL}/profile",
                 metadata={"order_id": order_id}
             )
-            return session.url
+            return {'url': session.url, 'id': session.id}
         except Exception as e:
             print(f"Stripe checkout session creation error: {str(e)}")
+            return None
+
+    def retrieve_checkout(self, checkout_id: str) -> Optional[dict]:
+        try:
+            return stripe.checkout.Session.retrieve(checkout_id, expand=['payment_intent'])
+        except Exception:
             return None
 
     def handle_webhook(self, payload: bytes, signature: str) -> bool:

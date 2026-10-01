@@ -8,6 +8,7 @@ class PaymentBase(BaseModel):
     credits: int
     amount: Decimal
     payment_method: str
+    currency: str = 'USD'
 
 class PaymentCreate(PaymentBase):
     """创建支付订单模型"""
@@ -35,6 +36,7 @@ class PaymentResponse(BaseModel):
     """支付响应模型"""
     order_id: str
     amount: Decimal
+    currency: str = 'USD'
     credits: int
     payment_url: str
 

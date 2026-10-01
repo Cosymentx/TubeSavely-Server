@@ -1,5 +1,10 @@
 from typing import List
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException, Query
+from fastapi.responses import PlainTextResponse
+import json
+import math
+from decimal import Decimal
+from app.schemas.paging import PageResponse
 from sqlalchemy.orm import Session
 import stripe
 
@@ -26,6 +31,42 @@ alipay_service = AlipayService()
 airwallex_service = AirwallexService()
 
 
+@router.get('/methods', response_model=ApiResponse[List[dict]])
+def get_payment_methods():
+    methods = []
+    if settings.STRIPE_SECRET_KEY:
+        methods.append({'id': 'stripe', 'name': 'Card (Stripe)', 'currencies': ['USD', 'CNY']})
+    if settings.CREEM_API_KEY:
+        methods.append({'id': 'creem', 'name': 'Card (Creem)', 'currencies': ['USD']})
+    if settings.ALIPAY_APP_ID and settings.ALIPAY_PRIVATE_KEY and settings.ALIPAY_PUBLIC_KEY:
+        methods.append({'id': 'alipay', 'name': 'Alipay', 'currencies': ['CNY']})
+    return ApiResponse(data=methods)
+
+
+@router.get('/history', response_model=ApiResponse[PageResponse[Payment]])
+def get_payment_history(
+    page: int = Query(1, ge=1), limit: int = Query(10, ge=1, le=100),
+    db: Session = Depends(deps.get_db), current_user: User = Depends(deps.get_current_user),
+):
+    query = db.query(payment_service.Payment).filter(payment_service.Payment.user_id == current_user.id)
+    total = query.count()
+    records = query.order_by(payment_service.Payment.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+    return ApiResponse(data=PageResponse(records=records, total=total, size=limit,
+                                        current=page, pages=math.ceil(total / limit)))
+
+
+@router.get('/history', response_model=ApiResponse[PageResponse[Payment]])
+def get_payment_history(
+    page: int = Query(1, ge=1), limit: int = Query(10, ge=1, le=100),
+    db: Session = Depends(deps.get_db), current_user: User = Depends(deps.get_current_user),
+):
+    query = db.query(payment_service.Payment).filter(payment_service.Payment.user_id == current_user.id)
+    total = query.count()
+    records = query.order_by(payment_service.Payment.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
+    return ApiResponse(data=PageResponse(records=records, total=total, size=limit,
+                                        current=page, pages=math.ceil(total / limit)))
+
+
 @router.post("/create", response_model=ApiResponse[PaymentResponse])
 def create_payment(
     *,
@@ -37,6 +78,12 @@ def create_payment(
 ):
     """Create payment order"""
     try:
+        currency = currency.upper()
+        if currency not in {'CNY', 'USD'}:
+            return ApiResponse(code=400, msg='Unsupported currency')
+        available = {method['id']: method for method in get_payment_methods().data}
+        if payment_method not in available or currency not in available[payment_method]['currencies']:
+            return ApiResponse(code=400, msg='This payment method does not support the selected currency')
         # get credit amount creem_product_id
         amount, credits, creem_product_id = payment_service.get_credit_amount_by_id(db, credit_amount_id, currency)
         
@@ -44,11 +91,12 @@ def create_payment(
         order_id = payment_service.generate_order_id()
         
         # Create payment record
-        payment_service.create_payment(
+        payment_record = payment_service.create_payment(
             db=db,
             user=current_user,
             payment_create=PaymentCreate(
                 amount=amount,
+                currency=currency,
                 credits=credits,
                 payment_method=payment_method,
                 order_id=order_id
@@ -57,6 +105,7 @@ def create_payment(
         
         # Generate payment URL based on payment method
         payment_url = None
+        provider_checkout_id = None
         if payment_method == "paypal":
             payment_url = paypal_service.create_payment(
                 order_id=order_id,
@@ -64,12 +113,15 @@ def create_payment(
                 description=f"TubeSavely {credits} Credits"
             )
         elif payment_method == "stripe":
-            payment_url = stripe_service.create_checkout_session(
+            checkout = stripe_service.create_checkout_session(
                 order_id=order_id,
                 amount=amount,
                 currency=currency,
-                description=f"TubeSavely {credits} Credits"
+                description=f"TubeSavely {credits} Credits",
+                customer_email=current_user.email,
             )
+            if checkout:
+                payment_url, provider_checkout_id = checkout["url"], checkout["id"]
         elif payment_method == "alipay":
             payment_url = alipay_service.create_payment(
                 order_id=order_id,
@@ -91,10 +143,13 @@ def create_payment(
                 description=f"TubeSavely {credits} Credits"
             )
         elif payment_method == "creem":
-            payment_url = creem_service.create_payment(
+            checkout = creem_service.create_payment(
                 order_id=order_id,
                 product_id=creem_product_id,
+                customer_email=current_user.email,
             )
+            if checkout:
+                payment_url, provider_checkout_id = checkout["url"], checkout["id"]
         else:
             return ApiResponse(
                 code=400,
@@ -103,15 +158,21 @@ def create_payment(
             )
         
         if not payment_url:
+            payment_record.status = payment_service.PaymentStatus.FAILED
+            db.commit()
             return ApiResponse(
                 code=400,
                 msg="Failed to create payment",
                 data=None
             )
         
+        payment_record.provider_checkout_id = provider_checkout_id
+        payment_record.provider_product_id = creem_product_id if payment_method == 'creem' else None
+        db.commit()
         return ApiResponse(data={
             "order_id": order_id,
             "amount": amount,
+            "currency": currency,
             "credits": credits,
             "payment_url": payment_url
         })
@@ -163,53 +224,26 @@ async def payment_webhook(
                     
         elif provider == "stripe":
             payload = await request.body()
-            signature = request.headers.get("stripe-signature")
-            if not signature:
-                return ApiResponse(
-                    code=400,
-                    msg="Missing Stripe signature"
-                )
-                
+            signature = request.headers.get('stripe-signature', '')
             if not settings.STRIPE_WEBHOOK_SECRET:
-                return ApiResponse(
-                    code=500,
-                    msg="Stripe webhook secret not configured"
-                )
-                
+                return PlainTextResponse('Webhook is not configured', status_code=503)
             try:
-                # 将payload转换为字符串
-                payload_str = payload.decode('utf-8')
-                event = stripe.Webhook.construct_event(
-                    payload_str,
-                    signature,
-                    settings.STRIPE_WEBHOOK_SECRET
-                )
-                if event.type == "payment_intent.succeeded":
-                    payment_intent = event.data.object
-                    order_id = payment_intent.metadata.order_id
-                    if order_id:
-                        payment = payment_service.get_payment_by_order_id(db, order_id)
-                        if payment:
-                            payment_service.update_payment_status(
-                                db=db,
-                                payment=payment,
-                                status=payment_service.PaymentStatus.COMPLETED,
-                                trade_no=payment_intent.id
-                            )
-            except stripe.SignatureVerificationError as e:
-                print(f"Stripe webhook signature verification error: {str(e)}")
-                return ApiResponse(
-                    code=400,
-                    msg=f"Invalid Stripe webhook signature: {str(e)}"
-                )
-            except Exception as e:
-                print(f"Stripe webhook processing error: {str(e)}")
-                return ApiResponse(
-                    code=400,
-                    msg=f"Failed to process Stripe webhook: {str(e)}"
-                )
+                event = stripe.Webhook.construct_event(payload, signature, settings.STRIPE_WEBHOOK_SECRET)
+            except (ValueError, stripe.error.SignatureVerificationError):
+                return PlainTextResponse('Invalid webhook signature', status_code=400)
+            obj = event.data.object
+            order_id = obj.get('metadata', {}).get('order_id')
+            payment = payment_service.get_payment_by_order_id(db, order_id) if order_id else None
+            if payment and payment.payment_method == 'stripe':
+                if event.type == 'checkout.session.completed':
+                    if obj.get('id') == payment.provider_checkout_id:
+                        payment_service.refresh_checkout_payment(db, payment)
+                elif event.type == 'payment_intent.succeeded':
+                    if (obj.get('currency', '').upper() == payment.currency
+                            and obj.get('amount_received') == int(payment.amount * 100)):
+                        payment_service.update_payment_status(db, payment, obj['id'], payment_service.PaymentStatus.COMPLETED)
             return ApiResponse()
-                
+
         elif provider == "alipay":
             # 获取表单数据和请求头
             form_data = await request.form()
@@ -226,32 +260,30 @@ async def payment_webhook(
                     db, 
                     data.get("out_trade_no")
                 )
-                if payment:
+                if (payment and payment.payment_method == 'alipay'
+                        and payment.currency == 'CNY'
+                        and Decimal(str(data.get('total_amount', '0'))) == payment.amount):
                     payment_service.update_payment_status(
-                        db=db,
-                        payment=payment,
-                        status=payment_service.PaymentStatus.COMPLETED,
-                        trade_no=transaction_id
-                    )
-                    return ApiResponse()
-        
+                        db=db, payment=payment, status=payment_service.PaymentStatus.COMPLETED,
+                        trade_no=transaction_id)
+                    return PlainTextResponse('success')
+            return PlainTextResponse('failure', status_code=400)
+
         elif provider == "creem":
-            data = await request.json()
-            print(f"creem request json {data}")
-            success, transaction_id, order_id = creem_service.verify_payment(data)
-            if success and transaction_id:
-                payment = payment_service.get_payment_by_order_id(
-                    db, 
-                    order_id
-                )
-                if payment:
-                    payment_service.update_payment_status(
-                        db=db,
-                        payment=payment,
-                        status=payment_service.PaymentStatus.COMPLETED,
-                        trade_no=transaction_id
-                    )
-                    return ApiResponse()
+            payload = await request.body()
+            if not settings.CREEM_WEBHOOK_SECRET:
+                return PlainTextResponse('Webhook is not configured', status_code=503)
+            if not creem_service.verify_signature(payload, request.headers.get('creem-signature', '')):
+                return PlainTextResponse('Invalid webhook signature', status_code=400)
+            data = json.loads(payload)
+            if data.get('eventType') == 'checkout.completed':
+                checkout = data.get('object', {})
+                order_id = checkout.get('metadata', {}).get('order_id')
+                payment = payment_service.get_payment_by_order_id(db, order_id) if order_id else None
+                if payment and payment.payment_method == 'creem' and checkout.get('id') == payment.provider_checkout_id:
+                    payment_service.refresh_checkout_payment(db, payment)
+            return ApiResponse()
+
         # elif provider == "wechat":
             # data = await request.json()
             # success, transaction_id = wechat_service.verify_payment(data)
@@ -331,21 +363,24 @@ def get_payment_orders(
         )
 
 @router.get("/status/{order_id}", response_model=ApiResponse[dict])
-async def check_payment_status(
+def check_payment_status(
     order_id: str,
-    db: Session = Depends(deps.get_db)
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user),
 ):
     """Check payment status"""
     try:
         payment = payment_service.get_payment_by_order_id(db, order_id)
-        if not payment:
+        if not payment or payment.user_id != current_user.id:
             return ApiResponse(
                 code=404,
                 msg="Payment not found",
             )
             
+        payment = payment_service.refresh_checkout_payment(db, payment)
         return ApiResponse(data={
             "amount": payment.amount,
+            "currency": payment.currency,
             "credits": payment.credits,
             "status": payment.status
         })

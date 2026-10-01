@@ -98,6 +98,7 @@ class Settings(BaseSettings):
 
     # Creem配置
     CREEM_API_KEY: str = os.environ.get("CREEM_API_KEY", "")
+    CREEM_WEBHOOK_SECRET: str = os.environ.get("CREEM_WEBHOOK_SECRET", "")
     CREEM_API_BASE_URL :str = os.environ.get("CREEM_API_BASE_URL", "https://test-api.creem.io/v1/checkouts")
     
     # 微信支付配置
