@@ -1,11 +1,11 @@
 from sqlalchemy.orm import Session
-from typing import Optional
-from datetime import datetime
 
 from app.models.video import Video
 from app.models.credit import Credit
 from app.models.user import User
 from app.schemas.video import VideoBase
+from app.services.credit import InsufficientCreditsError
+
 
 def complete_video_transaction(
     db: Session,
@@ -13,17 +13,20 @@ def complete_video_transaction(
     video_data: VideoBase,
     credits_cost: int = 3
 ):
-    """
-    处理视频解析成功后的数据更新
-    包括：
-    1. 创建视频记录
-    2. 创建用户-视频关联
-    3. 扣除用户积分
-    4. 记录积分变动
-    所有操作在一个事务中完成
-    """
+    """Persist a successful extraction and charge the user atomically."""
+    if credits_cost <= 0:
+        raise ValueError("credits_cost must be greater than zero")
+
     try:
-        # 创建视频记录
+        locked_user = (
+            db.query(User)
+            .filter(User.id == user.id)
+            .with_for_update()
+            .one()
+        )
+        if locked_user.credits < credits_cost:
+            raise InsufficientCreditsError("Insufficient credits for this operation")
+
         video = Video(
             original_url=video_data.url,
             title=video_data.title,
@@ -33,32 +36,27 @@ def complete_video_transaction(
             video_id=video_data.video_id,
             platform=video_data.platform,
             author=video_data.author,
-            formats=[f.dict() for f in video_data.formats],
-            credits_cost=credits_cost  # 设置所需积分
+            formats=[f.model_dump() for f in video_data.formats],
+            credits_cost=credits_cost,
         )
         db.add(video)
-        db.flush()  # 刷新会话以获取video.id
-        
-        # 创建用户-视频关联
-        video.users.append(user)
-        
-        # 扣除用户积分
-        user.credits -= credits_cost
-        
-        # 记录积分消费
-        credit_record = Credit(
-            user_id=user.id,
+        db.flush()
+
+        video.users.append(locked_user)
+        locked_user.credits -= credits_cost
+
+        db.add(Credit(
+            user_id=locked_user.id,
             credits=-credits_cost,
-            action='Consume',  # 添加积分变动类型
+            action="Consume",
             type=2,
-            description=f'extraction video ：{video_data.title}'
-        )
-        db.add(credit_record)
-        
-        # 提交事务
+            description=f"Video extraction: {video_data.title}",
+        ))
+
         db.commit()
         db.refresh(video)
-        
-    except Exception as e:
+        db.refresh(locked_user)
+        return video
+    except Exception:
         db.rollback()
-        raise e
+        raise
