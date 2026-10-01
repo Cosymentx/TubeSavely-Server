@@ -345,37 +345,11 @@ def openapi_parse(url: str):
         }
         return data
     if json_data is None:
-        response = requests.post('http://api.xiaofany.com/api/v1/remark', params={
-            'client_id': settings.FALLBACK_PARSE_CLIENT_ID,
-            'sign': settings.FALLBACK_PARSE_SIGN,
-            'url': url
-        })
-        json_data = response.json()
-        if 'data' in json_data:
-            data = {
-                'title': json_data['data']['desc'],
-                'formats': [{
-                    'url': json_data['data']['playAddr'],
-                    "ext": "mp4",
-                    "video_ext": "mp4",
-                    "height": 720,  # 添加默认分辨率
-                    "width": 1280,
-                    "format_id": "default",
-                    "format_note": "default"
-                }],
-                'url': json_data['data']['playAddr'],
-                'original_url': url,
-                'thumbnail': json_data['data']['cover'],
-                'music': json_data['data']['music'],
-                'video_id': str(hash(json_data['data']['playAddr'])),
-                'view_count': '0',
-                'like_count': '0',
-                'duration': '0'  # 添加默认时长
-            }
-            return data
-    else:
-        logger.error('{}'.format(json_data['message']))
+        logger.warning('External parse provider returned an empty response')
         return None
+
+    logger.error('External parse provider rejected the request')
+    return None
 
 def _create_video_base(video_data: dict) -> VideoBase:
     """创建VideoBase对象的辅助函数"""
