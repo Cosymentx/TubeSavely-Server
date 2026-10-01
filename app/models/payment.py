@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Numeric, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -10,20 +10,24 @@ class Payment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
-    order_id = Column(String(100), unique=True, index=True)  # 内部订单号
-    trade_no = Column(String(100), unique=True, nullable=True)  # 支付平台交易号
-    amount = Column(Numeric(10, 2))  # 支付金额
-    credits = Column(Integer)  # 购买的积分数量
-    payment_method = Column(String(20))  # 支付方式：alipay, wechat, paypal, airwallex
-    currency = Column(String(3), nullable=False, default='USD', server_default='USD')
+    order_id = Column(String(100), unique=True, index=True)
+    trade_no = Column(String(100), unique=True, nullable=True)
+    amount = Column(Numeric(10, 2))
+    credits = Column(Integer)
+    payment_method = Column(String(20))
+    currency = Column(String(3), nullable=False, default="USD", server_default="USD")
     provider_checkout_id = Column(String(255), unique=True, index=True, nullable=True)
     provider_product_id = Column(String(255), nullable=True)
-    status = Column(String(20))  # 状态：pending, paid, failed, refunded
+    status = Column(String(20))
+    credit_reversal_applied = Column(Boolean, nullable=False, default=False, server_default="0")
+    reversal_reason = Column(String(100), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    paid_at = Column(DateTime(timezone=True), nullable=True)  # 支付完成时间
-        
-    # 关联
+    paid_at = Column(DateTime(timezone=True), nullable=True)
+    refunded_at = Column(DateTime(timezone=True), nullable=True)
+    disputed_at = Column(DateTime(timezone=True), nullable=True)
+
     user = relationship("User", back_populates="payment_histories")
+    events = relationship("PaymentEvent", back_populates="payment", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Payment(order_id={self.order_id}, amount={self.amount}, status={self.status})>"
