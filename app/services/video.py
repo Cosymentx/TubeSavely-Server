@@ -74,7 +74,7 @@ async def extract(url: str,
                     should_close_db = False
                 try:
                     video_base = _create_video_base(video_data)
-                    complete_video_transaction(db=db,user=current_user, video_data=video_base)
+                    complete_video_transaction(db=db, user=current_user, video_data=video_base, credits_cost=settings.VIDEO_PARSE_CREDITS_COST)
                     return video_base
                 finally:
                     if should_close_db:
