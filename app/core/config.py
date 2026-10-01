@@ -63,9 +63,19 @@ class Settings(BaseSettings):
     # Facebook OAuth2
     FACEBOOK_CLIENT_ID: str = os.environ.get("FACEBOOK_CLIENT_ID", "")
     FACEBOOK_CLIENT_SECRET: str = os.environ.get("FACEBOOK_CLIENT_SECRET", "")
-    FACEBOOK_AUTHORIZE_URL: str = os.environ.get("FACEBOOK_AUTHORIZE_URL", "https://www.facebook.com/v12.0/dialog/oauth")
-    FACEBOOK_TOKEN_URL: str = os.environ.get("FACEBOOK_TOKEN_URL", "https://graph.facebook.com/v12.0/oauth/access_token")
-    FACEBOOK_API_BASE_URL: str = os.environ.get("FACEBOOK_API_BASE_URL", "https://graph.facebook.com/v12.0/me")
+    FACEBOOK_GRAPH_VERSION: str = os.environ.get("FACEBOOK_GRAPH_VERSION", "v23.0")
+    FACEBOOK_AUTHORIZE_URL: str = os.environ.get(
+        "FACEBOOK_AUTHORIZE_URL",
+        f"https://www.facebook.com/{FACEBOOK_GRAPH_VERSION}/dialog/oauth"
+    )
+    FACEBOOK_TOKEN_URL: str = os.environ.get(
+        "FACEBOOK_TOKEN_URL",
+        f"https://graph.facebook.com/{FACEBOOK_GRAPH_VERSION}/oauth/access_token"
+    )
+    FACEBOOK_API_BASE_URL: str = os.environ.get(
+        "FACEBOOK_API_BASE_URL",
+        f"https://graph.facebook.com/{FACEBOOK_GRAPH_VERSION}/me"
+    )
 
     # WeChat OAuth2
     WECHAT_APP_ID: str = os.environ.get("WECHAT_APP_ID", "")
@@ -126,6 +136,9 @@ class Settings(BaseSettings):
     DOUYIN_PROXY: str | None = os.environ.get("DOUYIN_PROXY")
     TIKTOK_PROXY: str | None = os.environ.get("TIKTOK_PROXY")
     EXTERNAL_PARSE_TOKEN: str = os.environ.get("EXTERNAL_PARSE_TOKEN", "")
+    VIDEO_PARSE_CREDITS_COST: int = int(os.environ.get("VIDEO_PARSE_CREDITS_COST", "3"))
+    CONVERT_TASK_CREDITS_COST: int = int(os.environ.get("CONVERT_TASK_CREDITS_COST", "5"))
+    GENERATE_TASK_CREDITS_COST: int = int(os.environ.get("GENERATE_TASK_CREDITS_COST", "10"))
     FALLBACK_PARSE_CLIENT_ID: str = os.environ.get("FALLBACK_PARSE_CLIENT_ID", "")
     FALLBACK_PARSE_SIGN: str = os.environ.get("FALLBACK_PARSE_SIGN", "")
 
@@ -133,3 +146,16 @@ class Settings(BaseSettings):
         case_sensitive = True
 
 settings = Settings()
+
+if settings.PRODUCTION:
+    missing = [
+        name for name in ("SECRET_KEY", "DATABASE_URL", "REDIS_URL")
+        if not os.environ.get(name)
+    ]
+    if missing:
+        raise RuntimeError(
+            "Missing required production environment variables: " + ", ".join(missing)
+        )
+    if len(settings.SECRET_KEY) < 32:
+        raise RuntimeError("SECRET_KEY must be at least 32 characters in production")
+
