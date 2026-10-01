@@ -28,6 +28,10 @@ class Payment(PaymentBase):
     status: str
     created_at: datetime
     paid_at: Optional[datetime] = None
+    refunded_at: Optional[datetime] = None
+    disputed_at: Optional[datetime] = None
+    credit_reversal_applied: bool = False
+    reversal_reason: Optional[str] = None
 
     class Config:
         from_attributes = True
