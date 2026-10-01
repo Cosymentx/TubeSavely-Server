@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://raw.githubusercontent.com/Cosymentx/TubeSavely/master/assets/images/ic_logo.png" width="96" height="96" alt="TubeSavely Logo"/>
+<img src="https://raw.githubusercontent.com/Cosymentx/TubeSavely/master/assets/images/ic_logo.png" width="96" alt="TubeSavely Logo"/>
 
 # TubeSavely-Server
 
