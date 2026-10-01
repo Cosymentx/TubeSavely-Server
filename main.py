@@ -1,8 +1,11 @@
 from contextlib import asynccontextmanager
+import json
+import logging
+import os
 
 import requests
-import uvicorn
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
 import redis.asyncio as redis
 
 from fastapi_limiter import FastAPILimiter
@@ -12,20 +15,73 @@ from vendor import yt_dlp
 from vendor.yt_dlp.extractor.extend import parse_video_share_url
 from urllib.parse import urlparse
 
+logger = logging.getLogger(__name__)
+REDIS_URL = os.environ.get("REDIS_URL", "")
+BACKEND_CORS_ORIGINS = json.loads(os.environ.get("BACKEND_CORS_ORIGINS", "[]"))
+if not isinstance(BACKEND_CORS_ORIGINS, list) or not all(
+    isinstance(origin, str) for origin in BACKEND_CORS_ORIGINS
+):
+    raise ValueError("BACKEND_CORS_ORIGINS must be a JSON array of origins")
+
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    redis_connection = redis.from_url("redis://127.0.0.1:6379", encoding="utf8")
-    await FastAPILimiter.init(redis_connection)
-    yield
-    await FastAPILimiter.close()
+    app.state.limiter_ready = False
+    redis_connection = None
+    try:
+        if REDIS_URL:
+            redis_connection = redis.from_url(
+                REDIS_URL, encoding="utf8", socket_connect_timeout=5, socket_timeout=5,
+            )
+            try:
+                await FastAPILimiter.init(redis_connection)
+                app.state.limiter_ready = True
+            except Exception:
+                logger.exception("Redis initialization failed; check REDIS_URL")
+        else:
+            logger.warning("REDIS_URL is unset; request rate limiting is disabled")
+        yield
+    finally:
+        if app.state.limiter_ready:
+            await FastAPILimiter.close()
+        elif redis_connection is not None:
+            await redis_connection.aclose()
 
 
 app = FastAPI(lifespan=lifespan)
+app.state.limiter_ready = False
+if BACKEND_CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=BACKEND_CORS_ORIGINS,
+        allow_methods=["GET"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 
-async def rate_limiter():
-    return RateLimiter(times=1, seconds=5)
+async def rate_limiter(request: Request, response: Response):
+    if not REDIS_URL:
+        return
+    if not app.state.limiter_ready:
+        raise HTTPException(status_code=503, detail="Rate limiting service is unavailable")
+    await RateLimiter(times=1, seconds=5)(request, response)
+
+
+@app.get("/health")
+async def health():
+    redis_status = "disabled"
+    if REDIS_URL:
+        redis_status = "unhealthy"
+        if app.state.limiter_ready:
+            try:
+                await FastAPILimiter.redis.ping()
+                redis_status = "healthy"
+            except Exception:
+                pass
+    return {
+        "status": "unhealthy" if redis_status == "unhealthy" else "healthy",
+        "services": {"redis": redis_status},
+    }
 
 
 @app.get("/test", dependencies=[Depends(rate_limiter)])
@@ -63,7 +119,7 @@ def yt_dlp_parse(url: str):
         #     'format': 'best',  # 你可以根据需要设置不同的选项
         #     'outtmpl': '/Users/Waiting/Downloads/video/video.%(ext)s'  # 设置输出路径模板
         # }
-        with yt_dlp.YoutubeDL() as ydl:
+        with yt_dlp.YoutubeDL({'cachedir': False}) as ydl:
             data = ydl.extract_info(url, download=False)
             # ydl.download(url)
             # data = extend_parse(url)
@@ -149,6 +205,7 @@ def openapi_parse(url: str):
 
 
 def main():
+    import uvicorn
     uvicorn.run('main:app', host="0.0.0.0", port=9527, reload=True)
 
 

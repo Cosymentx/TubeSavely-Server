@@ -1,297 +1,103 @@
-# TubeSavely
+# TubeSavely Server
 
-TubeSavely is an open-source Python project that provides an API service for parsing video information from various video hosting websites. It leverages the powerful [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) library to extract video details and download links.
+基于 FastAPI 和内置 yt-dlp 的视频信息解析 API。
+仓库：https://github.com/Cosymentx/TubeSavely-Server
 
-## Features
+此仓库是精简版服务，入口为根目录 `main.py`，不包含用户登录、支付或 MySQL。
+接口没有 `/api/v1` 前缀，也不需要 JWT Token。
 
-- Parse video information from multiple video hosting platforms
-- Provide direct download links for videos
-- RESTful API for easy integration with other applications
-- Simple deployment for self-hosted solutions
+## 本地运行
 
-## Requirements
+使用 Python 3.12 或 3.13，在仓库根目录执行：
 
-- Python 3.12 or higher
-- yt-dlp 2024.07.09 or higher
-
-## Installation
-
-1. Clone the repository:git clone https://github.com/Cosyment/TubeSavely.git
-   cd TubeSavely
-2. Create a virtual environment (optional but recommended):
-   python -m venv venv
-   source venv/bin/activate  # On Windows use venv\Scripts\activate
-3. Install the required dependencies:
-   pip install -r requirements.txt
-
-## Usage
-
-1. Start the API server:
-   python app.py
-2. Send a POST request to the `/parse` endpoint with the video URL:
-   `curl -X POST http://localhost:5000/parse -H "Content-Type: application/json" -d '{"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}'`
-3. The API will respond with JSON containing the parsed video information and download links.
-
-## API Documentation
-
-### POST /parse
-
-Parse video information from a given URL.
-
-**Request Body:**
-```json
-{
-"url": "https://www.example.com/video"
-}
+```bash
+python -m venv .venv
+source .venv/bin/activate
+# Windows: .venv\Scripts\activate
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --host 127.0.0.1 --port 9527 --reload
 ```
-**Response:**
-~~~json
-{
-  "code": 200,
-  "msg": "success",
-  "data": {
-    "id": "39091936",
-    "formats": [
-      {
-        "format_id": "0",
-        "format_index": null,
-        "url": "https://ali-safety-video.acfun.cn/mediacloud/acfun/acfun_video/96be72289633296f-b49c69b688c2be9d889dac961da9d965-hls_360p_2.m3u8?pkey=ABCza86_-9cRur8DgFYCXgavZiC-QSPT3sjJPpf9fGYF1TyN2mXb7bBNA_2G9C3B37362lvwMFu9DIU0HxoLP5ND_0YeulSP6AiXfA3P08YV4NSzjg0vE6oPvhx-6uEw4xEP2QnKzRmMBfC9soUKYdidGmLQoC63pQJ2snymsAXoDc0MzD7hbGcQVmUC93_ogdo_gXiy2CuNeRxkzgZL2WyhKvXJvCFw2m_hv0dSfFPaVjy3CDJY0X5O6kYe7UzcN3c&safety_id=AAI4KIcJFUCxquYcnXjvK_Hv",
-        "ext": "mp4",
-        "protocol": "m3u8_native",
-        "preference": null,
-        "quality": null,
-        "has_drm": false,
-        "fps": 30,
-        "width": 640,
-        "height": 360,
-        "tbr": 480,
-        "resolution": "640x360",
-        "dynamic_range": "SDR",
-        "aspect_ratio": 1.78,
-        "filesize_approx": 21387000,
-        "cookies": "_did=web_634527202E5E01FA; Domain=.acfun.cn; Path=/; Expires=1754404186; safety_id=AAI4KIcJFUCxquYcnXjvK_Hv; Domain=.acfun.cn; Path=/; Expires=1722954585",
-        "http_headers": {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-us,en;q=0.5",
-          "Sec-Fetch-Mode": "navigate",
-          "Referer": "https://www.acfun.cn/"
-        },
-        "video_ext": "mp4",
-        "audio_ext": "none",
-        "vbr": null,
-        "abr": null,
-        "format": "0 - 640x360"
-      },
-      {
-        "format_id": "1",
-        "format_index": null,
-        "url": "https://tx-safety-video.acfun.cn/mediacloud/acfun/acfun_video/96be72289633296f-932d841fd1b2d80683fe2410947450db-hls_540p_2.m3u8?pkey=ABD8wozYhNd2sjsTV4EJVcVvFi27YDWqcTuNAa2YhuUFXLptTv992aZ7OILUfgXaaWZKrDilnCjMZ8-Sm7wQVGz2MfnlGLuTLxOZ6KSBPToK22e-Iyqp7H6PcG94OQKJK1t3dFWEMhY5dK52oqRavtFv-q_qOgF6l5BJWBwyEHPuEJDC-ln0_C0qiYe6SsDJ23lrvVd1pN66pzOI7IjH3kH4OdbST43YoTtHsldxtAth6HZ1AuIl_mt7Lmd6lzorcuI&safety_id=AAI4KIcJFUCxquYcnXjvK_Hv",
-        "ext": "mp4",
-        "protocol": "m3u8_native",
-        "preference": null,
-        "quality": null,
-        "has_drm": false,
-        "fps": 30,
-        "width": 960,
-        "height": 540,
-        "tbr": 804,
-        "resolution": "960x540",
-        "dynamic_range": "SDR",
-        "aspect_ratio": 1.78,
-        "filesize_approx": 35823225,
-        "cookies": "_did=web_634527202E5E01FA; Domain=.acfun.cn; Path=/; Expires=1754404186; safety_id=AAI4KIcJFUCxquYcnXjvK_Hv; Domain=.acfun.cn; Path=/; Expires=1722954585",
-        "http_headers": {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-us,en;q=0.5",
-          "Sec-Fetch-Mode": "navigate",
-          "Referer": "https://www.acfun.cn/"
-        },
-        "video_ext": "mp4",
-        "audio_ext": "none",
-        "vbr": null,
-        "abr": null,
-        "format": "1 - 960x540"
-      },
-      {
-        "format_id": "2",
-        "format_index": null,
-        "url": "https://ali-safety-video.acfun.cn/mediacloud/acfun/acfun_video/96be72289633296f-cfac4e7055daaecc6c802a4a434f9105-hls_720p_2.m3u8?pkey=ABB5Mb5jU2soVD6Cc2VeCH0bRkt5ngjEhFwgUTjdZ5-2ru8iQG9JWIBi1ObT6lnAKiT1LYpMQntNBMHH0Cr2ZPGQg1i1KyD1bYmai9GoJ2SYY3xgw8elyX1GktDnBFZhkp1d9LFkpT9RSzwYtNQ9Lm1x2vSkUcIn57VKZgHNXPt3Ywn70gsGAj7uED5Xv3Kzhn1HgKt3MvRwSZHbZ2UEqW9FeeLnJMHnHsbN-rcd8S3FIxBptSwrMy4LEDE2Hg0tL7s&safety_id=AAI4KIcJFUCxquYcnXjvK_Hv",
-        "ext": "mp4",
-        "protocol": "m3u8_native",
-        "preference": null,
-        "quality": null,
-        "has_drm": false,
-        "fps": 30,
-        "width": 1280,
-        "height": 720,
-        "tbr": 1394,
-        "resolution": "1280x720",
-        "dynamic_range": "SDR",
-        "aspect_ratio": 1.78,
-        "filesize_approx": 62111412,
-        "cookies": "_did=web_634527202E5E01FA; Domain=.acfun.cn; Path=/; Expires=1754404186; safety_id=AAI4KIcJFUCxquYcnXjvK_Hv; Domain=.acfun.cn; Path=/; Expires=1722954585",
-        "http_headers": {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-us,en;q=0.5",
-          "Sec-Fetch-Mode": "navigate",
-          "Referer": "https://www.acfun.cn/"
-        },
-        "video_ext": "mp4",
-        "audio_ext": "none",
-        "vbr": null,
-        "abr": null,
-        "format": "2 - 1280x720"
-      },
-      {
-        "format_id": "3",
-        "format_index": null,
-        "url": "https://tx-safety-video.acfun.cn/mediacloud/acfun/acfun_video/96be72289633296f-36be6c261fa57cfa2128c6fde7020787-hls_1080p_2.m3u8?pkey=ABBu9jSr-O0SF4zXF1DZCq3LYYIMHq9Y5HYb6jyty2espxdmJtZwfOa9b1CYxiwgrj9rD6Q8QxRjPXW3_JA4nTHNs_28nhXZaqvOYYADCqvcO5L4Ey3O885vHakySZNCi_Af398CXwp047H5dWkrNxeYQO_xU-Sm-Cj_-OolgGECbcm1Zoc6QCsjItRc9qcBrn_uU1ItWYvf4dfD8o3qaW-KRqEAWRmfAQSUVmTeZjkTJ1Xo6yZ0xC5HCCO9AHg27hA&safety_id=AAI4KIcJFUCxquYcnXjvK_Hv",
-        "ext": "mp4",
-        "protocol": "m3u8_native",
-        "preference": null,
-        "quality": null,
-        "has_drm": false,
-        "fps": 30,
-        "width": 1920,
-        "height": 1080,
-        "tbr": 2312,
-        "resolution": "1920x1080",
-        "dynamic_range": "SDR",
-        "aspect_ratio": 1.78,
-        "filesize_approx": 103014050,
-        "cookies": "_did=web_634527202E5E01FA; Domain=.acfun.cn; Path=/; Expires=1754404186; safety_id=AAI4KIcJFUCxquYcnXjvK_Hv; Domain=.acfun.cn; Path=/; Expires=1722954585",
-        "http_headers": {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-us,en;q=0.5",
-          "Sec-Fetch-Mode": "navigate",
-          "Referer": "https://www.acfun.cn/"
-        },
-        "video_ext": "mp4",
-        "audio_ext": "none",
-        "vbr": null,
-        "abr": null,
-        "format": "3 - 1920x1080"
-      }
-    ],
-    "subtitles": {
 
-    },
-    "duration": 356.45,
-    "timestamp": 1665125258,
-    "http_headers": {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "Accept-Language": "en-us,en;q=0.5",
-      "Sec-Fetch-Mode": "navigate",
-      "Referer": "https://www.acfun.cn/"
-    },
-    "title": "客人故意不做措施，让艺妓怀孕了，结果接客更方便",
-    "thumbnail": "https://tx-free-imgs.acfun.cn/newUpload/71166724_1c624ec486304fa78a3328a79e7a8598.jpeg?imageslim",
-    "description": null,
-    "uploader": "飞电解说",
-    "uploader_id": "71166724",
-    "tags": [
-      "吐槽",
-      "电影杂谈"
-    ],
-    "view_count": 140962,
-    "like_count": 606,
-    "comment_count": 65,
-    "original_url": "https://m.acfun.cn/v/?ac=39091936",
-    "webpage_url": "https://www.acfun.cn/v/ac39091936",
-    "webpage_url_basename": "ac39091936",
-    "webpage_url_domain": "acfun.cn",
-    "extractor": "AcFunVideo",
-    "extractor_key": "AcFunVideo",
-    "playlist": null,
-    "playlist_index": null,
-    "thumbnails": [
-      {
-        "url": "https://tx-free-imgs.acfun.cn/newUpload/71166724_1c624ec486304fa78a3328a79e7a8598.jpeg?imageslim",
-        "id": "0"
-      }
-    ],
-    "display_id": "39091936",
-    "fulltitle": "客人故意不做措施，让艺妓怀孕了，结果接客更方便",
-    "duration_string": "5:56",
-    "upload_date": "20221007",
-    "release_year": null,
-    "requested_subtitles": null,
-    "_has_drm": null,
-    "epoch": 1722868192,
-    "format_id": "3",
-    "format_index": null,
-    "url": "https://tx-safety-video.acfun.cn/mediacloud/acfun/acfun_video/96be72289633296f-36be6c261fa57cfa2128c6fde7020787-hls_1080p_2.m3u8?pkey=ABBu9jSr-O0SF4zXF1DZCq3LYYIMHq9Y5HYb6jyty2espxdmJtZwfOa9b1CYxiwgrj9rD6Q8QxRjPXW3_JA4nTHNs_28nhXZaqvOYYADCqvcO5L4Ey3O885vHakySZNCi_Af398CXwp047H5dWkrNxeYQO_xU-Sm-Cj_-OolgGECbcm1Zoc6QCsjItRc9qcBrn_uU1ItWYvf4dfD8o3qaW-KRqEAWRmfAQSUVmTeZjkTJ1Xo6yZ0xC5HCCO9AHg27hA&safety_id=AAI4KIcJFUCxquYcnXjvK_Hv",
-    "ext": "mp4",
-    "protocol": "m3u8_native",
-    "preference": null,
-    "quality": null,
-    "has_drm": false,
-    "fps": 30,
-    "width": 1920,
-    "height": 1080,
-    "tbr": 2312,
-    "resolution": "1920x1080",
-    "dynamic_range": "SDR",
-    "aspect_ratio": 1.78,
-    "filesize_approx": 103014050,
-    "cookies": "_did=web_634527202E5E01FA; Domain=.acfun.cn; Path=/; Expires=1754404186; safety_id=AAI4KIcJFUCxquYcnXjvK_Hv; Domain=.acfun.cn; Path=/; Expires=1722954585",
-    "video_ext": "mp4",
-    "audio_ext": "none",
-    "vbr": null,
-    "abr": null,
-    "format": "3 - 1920x1080"
-  }
-}
-~~~
+依赖文件包含 FastAPI、uvicorn、Redis 客户端、限流库及自定义解析器所需依赖。
+部署时不需要运行 Jupyter 或安装 notebook 开发工具。
 
+## Vercel 部署
 
+1. 导入本仓库，选择 `master` 或包含修复的分支，Root Directory 设为仓库根目录。
+2. 使用 Vercel 的 FastAPI 自动检测；应用入口为 `main.py` 中的 `app`。
+3. 在 Settings → Environment Variables 配置下表中的变量。
+4. 部署后检查 `/docs`、`/openapi.json` 和 `/health`。
+5. 修改依赖或环境变量后重新部署；排查依赖问题时关闭使用旧 Build Cache 的选项。
 
-## App
+| 环境变量 | 用途 | 示例 |
+| --- | --- | --- |
+| `BACKEND_CORS_ORIGINS` | 允许浏览器调用接口的前端 Origin，JSON 数组 | `["https://your-frontend.vercel.app","http://localhost:5173"]` |
+| `REDIS_URL` | 可选，启用 Redis 限流；必须使用 Vercel 可访问的 Redis | `rediss://:PASSWORD@HOST:PORT/0` |
 
-[Flutter Repo TubeSavely](https://github.com/Cosyment/TubeSavely)
+未配置 `REDIS_URL` 时，服务不连接 Redis，且不启用请求限流。
+配置后按客户端 IP 和接口限制每 5 秒 1 次请求，超限返回 HTTP 429。
+若已配置的 Redis 无法初始化，文档仍可打开，`/health` 报告异常，
+`/test` 和 `/parse` 返回 HTTP 503，避免绕过已配置的限流。
+Vercel 环境没有项目专用的本地 Redis，不能使用 `127.0.0.1:6379`。
 
-[AppStore](https://apps.apple.com/cn/app/tubesavely/id6503423677)
+前端应使用可公开访问的生产域名。如果返回 Vercel 登录页，检查项目的
+Deployment Protection 设置。当前生产地址为：
 
-## Thanks
+```text
+https://tube-savely-server.vercel.app
+```
 
-[yt-dlp](https://github.com/yt-dlp/yt-dlp)
+## API
 
+| 方法 | 路径 | 参数 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/docs` | 无 | Swagger 文档 |
+| GET | `/openapi.json` | 无 | OpenAPI 定义 |
+| GET | `/health` | 无 | 服务与 Redis 状态 |
+| GET | `/test` | `params` | 连通性测试 |
+| GET | `/parse` | `url` | 视频信息解析 |
 
+```bash
+curl 'https://tube-savely-server.vercel.app/test?params=hello'
+curl --get 'https://tube-savely-server.vercel.app/parse' \
+  --data-urlencode 'url=https://www.youtube.com/watch?v=jNQXAC9IVRw'
+```
 
-## 激活系统Python虚拟环境
+解析响应采用 `{ "code": 200, "msg": "success", "data": ... }` 格式，
+前端需要同时检查 HTTP 状态、业务 `code` 以及 `data` 是否为空。
 
-执行这个命令时，shell会话将被配置为使用虚拟环境中的Python解释器和库，而不是系统默认的Python版本。任何Python相关的命令都会使用虚拟环境中的Python解释器和库。可以安装、升级和卸载包，而不会影响系统级别的Python环境。e.g.
+```javascript
+const api = "https://tube-savely-server.vercel.app";
+const response = await fetch(`${api}/parse?${new URLSearchParams({ url: videoUrl })}`);
+if (!response.ok) throw new Error(`HTTP ${response.status}`);
+const result = await response.json();
+if (result.code !== 200 || !result.data) throw new Error(result.msg || "解析失败");
+console.log(result.data);
+```
 
-创建并激活当前项目虚拟环境
-~~~
-python3 -m venv /path/to/your/project/venv  #创建
-source /Users/Waiting/PycharmProjects/TubeSavely/venv/bin/python/bin/activate #激活
-~~~
+## 验证与排错
 
-查看当前虚拟环境路径
+```bash
+python -m pip install httpx==0.28.1
+python -m unittest discover -s tests -v
+```
 
-~~~
-echo $PYTHONPATH
-~~~
+测试覆盖无需 uvicorn 的应用导入、无 Redis 时的文档访问、跨域预检、
+Redis 故障时的 HTTP 503，以及正常 Redis 配置下的限流调用。
+测试中的 Redis 为模拟对象，不访问真实数据库或在线平台。
 
-退出虚拟环境
+- `ModuleNotFoundError: No module named 'uvicorn'`：确认部署包含最新的
+  `requirements.txt`，Vercel Root Directory 为仓库根目录，再重新构建部署。
+  本版将 uvicorn 导入放在本地启动函数中，Vercel 导入 ASGI 应用时不需要它。
+- `/docs` 可访问但浏览器调用被拒绝：检查 `BACKEND_CORS_ORIGINS`，
+  Origin 包含协议和端口，不包含路径或末尾 `/`。
+- `/test` 返回 503：检查 `REDIS_URL`、Redis TLS 设置和网络连通性。
+- 在线平台解析失败：检查 yt-dlp 版本、平台登录要求、网络和 Vercel 执行时限。
 
-~~~
-deactivate
-~~~
+当前远程仓库内置 yt-dlp 为 `2024.07.09`，本次部署修复未更新这份源码。
+另一个本地项目 `tubesavely-server/app/vendor/yt_dlp` 的升级不会自动同步到此仓库。
+本项目禁用 yt-dlp 文件缓存以适配函数运行环境。视频解析返回链接，
+长时间下载、FFmpeg 合并和持久化文件需要另外设计执行和存储方式。
 
-生成当前虚拟环境所有依赖库列表文件
-
-~~~
-pip freeze > requirements.txt
-~~~
-
-安装requirements.txt
-
-~~~
-pip install -r requirements.txt
+官方参考：[FastAPI 部署](https://vercel.com/docs/frameworks/backend/fastapi)、
+[Python 运行时](https://vercel.com/docs/functions/runtimes/python)。

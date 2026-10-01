@@ -1,4 +1,6 @@
 venv/
+.venv/
+.vercel/
 build/
 dist/
 zip/
