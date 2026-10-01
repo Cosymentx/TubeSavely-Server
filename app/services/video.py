@@ -391,30 +391,17 @@ def _create_video_base(video_data: dict) -> VideoBase:
     )
 
 def create_video(
+    db: Session,
     video_in: VideoCreate,
     current_user: User
 ) -> Video:
-    """Create new video"""
-    from app.db.session import SessionLocal
-    db = SessionLocal()
-    try:
-        video = Video(
-            url=video_in.url,
-            title=video_in.title,
-            description=video_in.description,
-            thumbnail=video_in.thumbnail,
-            duration=video_in.duration,
-            platform=video_in.platform,
-            user_id=current_user.id,
-            credits_cost=video_in.credits_cost
-        )
-        db.add(video)
-        db.commit()
-        db.refresh(video)
-        return video
-    finally:
-        db.close()
-
+    """Create a user video record using the server-defined extraction cost."""
+    return complete_video_transaction(
+        db=db,
+        user=current_user,
+        video_data=VideoBase.model_validate(video_in),
+        credits_cost=settings.VIDEO_PARSE_CREDITS_COST,
+    )
 
 def get_video_history(
     db: Session,
