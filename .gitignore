@@ -17,3 +17,7 @@ dist/
 skills-lock.json
 app/runtime_bin/
 .vercel
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
