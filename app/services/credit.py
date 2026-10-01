@@ -15,10 +15,13 @@ def add_credits(
     user: User,
     credits: int,
     action: str,
-    type: int,
+    type: int = 0,
     description: Optional[str] = None
 ) -> None:
     """Add credits to user's account"""
+    if credits <= 0:
+        raise ValueError("Credits must be greater than zero")
+    user = db.query(User).filter(User.id == user.id).with_for_update().one()
     user.credits += credits
     credit_history = Credit(
         user_id=user.id,
@@ -39,14 +42,18 @@ def deduct_credits(
     description: Optional[str] = None
 ) -> None:
     """Deduct credits from user's account"""
+    if credits <= 0:
+        raise ValueError("Credits must be greater than zero")
+    user = db.query(User).filter(User.id == user.id).with_for_update().one()
     if user.credits < credits:
         raise InsufficientCreditsError("Insufficient credits for this operation")
-    
+
     user.credits -= credits
     credit_history = Credit(
         user_id=user.id,
         credits=-credits,
         action=action,
+        type=2,
         description=description
     )
     db.add(credit_history)
