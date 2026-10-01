@@ -26,7 +26,13 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-@router.post('/download')
+async def download_rate_limiter(request: Request, response: Response):
+    if FastAPILimiter.redis is None:
+        raise HTTPException(status_code=503, detail="Rate limiting service is unavailable")
+    await RateLimiter(times=10, seconds=60)(request, response)
+
+
+@router.post('/download', dependencies=[Depends(download_rate_limiter)])
 async def download_video(
     payload: VideoDownloadRequest,
     db: Session = Depends(deps.get_db),
