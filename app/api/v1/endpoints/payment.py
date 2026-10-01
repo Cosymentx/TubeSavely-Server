@@ -55,18 +55,6 @@ def get_payment_history(
                                         current=page, pages=math.ceil(total / limit)))
 
 
-@router.get('/history', response_model=ApiResponse[PageResponse[Payment]])
-def get_payment_history(
-    page: int = Query(1, ge=1), limit: int = Query(10, ge=1, le=100),
-    db: Session = Depends(deps.get_db), current_user: User = Depends(deps.get_current_user),
-):
-    query = db.query(payment_service.Payment).filter(payment_service.Payment.user_id == current_user.id)
-    total = query.count()
-    records = query.order_by(payment_service.Payment.created_at.desc()).offset((page - 1) * limit).limit(limit).all()
-    return ApiResponse(data=PageResponse(records=records, total=total, size=limit,
-                                        current=page, pages=math.ceil(total / limit)))
-
-
 @router.post("/create", response_model=ApiResponse[PaymentResponse])
 def create_payment(
     *,
@@ -183,7 +171,8 @@ def create_payment(
             data=None
         )
 
-@router.api_route("/webhook/{provider}", methods=["GET", "POST"], response_model=ApiResponse[dict])
+@router.get("/webhook/{provider}", response_model=ApiResponse[dict], operation_id="payment_webhook_get")
+@router.post("/webhook/{provider}", response_model=ApiResponse[dict], operation_id="payment_webhook_post")
 async def payment_webhook(
     provider: str,
     request: Request,

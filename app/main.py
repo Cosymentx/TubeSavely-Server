@@ -52,6 +52,12 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
+    description=(
+        "TubeSavely Python API for users, video extraction, credits, and payments.\n\n"
+        "Related projects: [Flutter app](https://github.com/Cosymentx/TubeSavely), "
+        "[Vue web client](https://github.com/Cosymentx/TubeSavely-Vue), "
+        "[Python backend](https://github.com/Cosymentx/TubeSavely-Server)."
+    ),
     docs_url="/docs",
     redoc_url="/redoc",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",

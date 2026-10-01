@@ -4,6 +4,18 @@
 
 仓库：[Cosymentx/TubeSavely-Server](https://github.com/Cosymentx/TubeSavely-Server)。
 
+## TubeSavely 系列项目
+
+TubeSavely 系列由三个仓库组成，分别维护 Flutter 客户端、Vue Web 客户端和 Python API 服务。
+
+| 项目 | 技术栈 | 用途 |
+| --- | --- | --- |
+| [TubeSavely](https://github.com/Cosymentx/TubeSavely) | Flutter / Dart | 移动端与桌面端客户端 |
+| [TubeSavely-Vue](https://github.com/Cosymentx/TubeSavely-Vue) | Vue 3 / TypeScript | Web 客户端 |
+| [TubeSavely-Server](https://github.com/Cosymentx/TubeSavely-Server) | Python / FastAPI | 用户、视频、积分和支付 API |
+
+[访问 Web 客户端](https://tube-savely-vue.vercel.app) · [查看 API 文档](https://tube-savely-server.vercel.app/docs)
+
 ## 技术栈
 
 - Python 3.13（Docker 使用此版本）
