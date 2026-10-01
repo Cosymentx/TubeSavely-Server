@@ -80,6 +80,17 @@ TubeSavely 是一套完整的跨平台音视频解析与下载解决方案，由
 base64 < youtube.txt | tr -d '\n' | pbcopy
 ```
 
+#### Douyin / TikTok 专用解析
+
+- 支持粘贴分享文案、抖音 `video/作品ID`、`jingxuan?modal_id=作品ID`、TikTok `@用户名/video/作品ID` 和两平台短链接。短链接最多跟随 5 次跳转，每一步校验平台域名。
+- 先读取页面内嵌作品数据，缺失时尝试签名详情接口，最后使用 yt-dlp 兜底。单次专用解析最多 40 秒；一个请求内共用 Cookie、Chrome 131 请求特征和代理。
+- 返回真实分辨率、时长、稳定作品 ID、多码率及备用播放地址；未知清晰度保持空值。TikTok 同清晰度优先提供官方播放地址。播放地址可能有时效、地区或请求来源限制，解析成功不代表所有 CDN 地址都可用。
+- 本地或 Docker 可以挂载 `cookies/douyin.txt`、`cookies/tiktok.txt`，格式为 Netscape。Vercel 对应配置加密环境变量 `DOUYIN_COOKIES_BASE64`、`TIKTOK_COOKIES_BASE64`，编码方法同 YouTube。配置后重新部署；不要将 Cookie 文件提交到 Git。
+- 两平台默认继承 `VIDEO_PROXY`；可用 `DOUYIN_PROXY`、`TIKTOK_PROXY` 分别指定代理。未设置表示继承，显式设置为空字符串表示直连。同一解析会话不会在中途切换出口。
+- 抖音可以先尝试匿名会话：本地安装 `playwright` 并执行 `playwright install chromium`，再运行 `python scripts/refresh_douyin_cookies.py`。脚本新建浏览器会话并将 Cookie 保存到被 Git 忽略的 `cookies/douyin.txt`（权限 600），不读取个人浏览器资料。Vercel 需将此文件编码后更新 `DOUYIN_COOKIES_BASE64` 并重新部署。平台若要求人工验证，脚本会失败，需要正常访问平台后手动导出。Playwright 不随生产依赖安装。
+- 风控验证、签名拒绝、网络错误、作品不可访问分别返回明确提示。旧 Cookie 可能缺少当前平台必需的会话信息，届时需要重新导出。图集返回业务码 `422`，不作为可下载视频扣除积分；完整图集下载暂未实现。
+- 签名模块来自 [Evil0ctal/Douyin_TikTok_Download_API](https://github.com/Evil0ctal/Douyin_TikTok_Download_API/tree/d8f874cd5b647b0ca087a57b15a458c3864439fa/src/dtk/signing/native)，版本固定为 `d8f874c`，Apache-2.0 许可证及 NOTICE 保存在 `app/vendor/short_video_signing/`。媒体提取设计参考 [JoeanAmier/TikTokDownloader](https://github.com/JoeanAmier/TikTokDownloader/tree/473c90ff70c663cfb69310fff2b8d5192f200661/src/extract)，未复制其 GPL 代码。
+
 #### 环境依赖与内核校验
 ```bash
 # 检查内置版本与依赖环境

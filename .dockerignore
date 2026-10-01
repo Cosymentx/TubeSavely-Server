@@ -1,0 +1,14 @@
+.git
+.env*
+!.env.example
+.vercel
+.venv
+venv
+__pycache__
+*.pyc
+*.db
+*.log
+cookies
+logs
+downloads
+app/runtime_bin

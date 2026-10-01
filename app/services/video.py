@@ -7,6 +7,8 @@ import logging
 from app.vendor import yt_dlp
 from app.core.config import settings
 from app.services.video_runtime import ExtractorLogger, VideoParseError, extraction_error, is_youtube_url, javascript_runtimes, youtube_cookie_file
+from app.services.video_urls import extract_url, platform_of
+from app.services import short_video
 from app.models.video import Video
 from app.schemas.video import VideoCreate, VideoBase, VideoFormatBase
 from app.models.user import User
@@ -25,6 +27,7 @@ async def extract(url: str,
     解析视频URL，获取视频信息
     """
     try:
+        url = extract_url(url)
         if urlparse(url).scheme in ['http', 'https'] or url.startswith('www.'):
             video_data = await dispatch(url)
             if video_data is None:
@@ -59,6 +62,18 @@ async def dispatch(url: str):
     分发到不同的解析器
     """
     try:
+        url = extract_url(url)
+        if platform_of(url):
+            try:
+                return await short_video.parse(url)
+            except VideoParseError as error:
+                logger.warning('Short video extraction failed: %s', error.reason)
+                if error.code != 503 or error.reason.endswith('cookies_invalid'):
+                    raise
+                try:
+                    return await yt_dlp_parse(url)
+                except VideoParseError:
+                    raise error from None
         data = await yt_dlp_parse(url)
         if data is None:
             data = openapi_parse(url)
@@ -71,6 +86,9 @@ async def dispatch(url: str):
 
 
 async def yt_dlp_parse(url: str):
+    if platform_of(url):
+        # The same per-platform cookie/proxy configuration also reaches yt-dlp.
+        return await _yt_dlp_parse(url)
     encoded = settings.YOUTUBE_COOKIES_BASE64 if is_youtube_url(url) else ''
     with youtube_cookie_file(encoded) as cookiefile:
         return await _yt_dlp_parse(url, cookiefile)
@@ -99,11 +117,19 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
              'proxy': settings.VIDEO_PROXY,
         }
 
+        platform = platform_of(url)
+        if platform:
+            ydl_opts['proxy'] = short_video.platform_proxy(platform) or ''
+            ydl_opts['http_headers'] = {'User-Agent': short_video.USER_AGENT}
+
         # 如果存在对应的cookies文件，添加到配置中
         if cookies_file:
             ydl_opts['cookiefile'] = cookies_file
             logger.info('A platform cookie file is configured')
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            if platform:
+                for cookie in short_video.load_cookies(platform):
+                    ydl.cookiejar.set_cookie(cookie)
             try:
                 try:
                     data = ydl.extract_info(url, download=False)
@@ -157,20 +183,27 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
                     formats_serializable = [format_obj.dict() for format_obj in formats_dict]
                     return {
                         'url': url,
+                        'video_id': data['video_id'],
                         'title': data.get('title', ''),
                         'description': data.get('description'),
                         'thumbnail': data.get('thumbnail', ''),
                         'duration': str(int(data.get('duration') or 0)),
-                        'platform': data.get('platform',''),
+                        'platform': platform or data.get('platform',''),
                         'formats': formats_serializable,
                         'view_count' : str(data.get('view_count') if data.get('view_count') is not None else 0),
                         'like_count': str(data.get('like_count') if data.get('like_count') is not None else 0),
                         'author': data.get('uploader', '')
                     }
                 else:
+                    if platform:
+                        raise short_video.failure(platform, 'upstream_changed')
                     logger.info('yt_dlp parse no formats found, trying extend parse')
                     return await yt_dlp_extend_parse(url)
             except Exception as e:
+                if platform:
+                    if isinstance(e, VideoParseError):
+                        raise
+                    raise short_video.failure(platform, 'risk_control') from None
                 if is_youtube_url(url):
                     error = extraction_error(e)
                     logger.warning('YouTube extraction failed: %s', error.reason)
@@ -180,6 +213,8 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
     except VideoParseError:
         raise
     except Exception as e:
+        if platform_of(url):
+            raise short_video.failure(platform_of(url), 'upstream_changed') from None
         if is_youtube_url(url):
             if isinstance(e, FileNotFoundError):
                 raise VideoParseError('video_runtime_missing', '服务器的视频解析运行环境不可用，请管理员检查 Deno 构建配置。') from None
@@ -193,10 +228,10 @@ async def yt_dlp_extend_parse(url: str):
     使用扩展的yt-dlp解析器解析视频信息
     """
     try:
-        url_reg = re.compile(r"http[s]?:\/\/[\w.-]+[\w\/-]*[\w.-]*\??[\w=&:\-\+\%]*[/]*")
-        video_url = url_reg.search(url).group()
+        video_url = extract_url(url)
+        if platform_of(video_url):
+            return await short_video.parse(video_url)
         video_info = await parse_video_share_url(share_url=video_url)
-        logger.info(f'yt_dlp extend parse video_info {video_info}')
         if hasattr(video_info, 'video_url'):
             formats = [{
                 'url': video_info.video_url,
@@ -232,6 +267,8 @@ async def yt_dlp_extend_parse(url: str):
         else:
             logger.error(f'yt_dlp extend parse exception no video_url field')
             return None
+    except VideoParseError:
+        raise
     except KeyError as error:
         logger.error(f'yt_dlp extend parse KeyError exception {str(error)}')
         return None
@@ -315,7 +352,8 @@ def _create_video_base(video_data: dict) -> VideoBase:
         video_id=str(video_data.get('video_id')),
         view_count=video_data.get('view_count', '0'),
         like_count=video_data.get('like_count', '0'),
-        author=video_data.get('author', '')
+        author=video_data.get('author', ''),
+        platform=video_data.get('platform'),
     )
 
 def create_video(

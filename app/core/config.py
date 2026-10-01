@@ -121,6 +121,10 @@ class Settings(BaseSettings):
 
     VIDEO_PROXY: str = os.environ.get("VIDEO_PROXY", "")
     YOUTUBE_COOKIES_BASE64: str = os.environ.get("YOUTUBE_COOKIES_BASE64", "")
+    DOUYIN_COOKIES_BASE64: str = os.environ.get("DOUYIN_COOKIES_BASE64", "")
+    TIKTOK_COOKIES_BASE64: str = os.environ.get("TIKTOK_COOKIES_BASE64", "")
+    DOUYIN_PROXY: str | None = os.environ.get("DOUYIN_PROXY")
+    TIKTOK_PROXY: str | None = os.environ.get("TIKTOK_PROXY")
     EXTERNAL_PARSE_TOKEN: str = os.environ.get("EXTERNAL_PARSE_TOKEN", "")
     FALLBACK_PARSE_CLIENT_ID: str = os.environ.get("FALLBACK_PARSE_CLIENT_ID", "")
     FALLBACK_PARSE_SIGN: str = os.environ.get("FALLBACK_PARSE_SIGN", "")

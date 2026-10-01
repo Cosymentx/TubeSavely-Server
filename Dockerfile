@@ -26,10 +26,8 @@ COPY alembic.ini .
 COPY app/ app/
 COPY alembic/ alembic/
 
-# 根据环境变量复制对应的配置文件
-COPY .env.production .env.production
-COPY .env .env
-RUN if [ "$PRODUCTION" = "true" ] ; then cp .env.production .env ; fi
+# Compose injects production configuration at runtime via env_file.
+# Never bake application credentials into image layers.
 
 # 创建必要的目录
 RUN mkdir -p downloads logs

@@ -43,3 +43,6 @@ websockets==15.0
 # Companion dependencies for vendored yt-dlp 2026.08.19
 yt-dlp-ejs==0.8.0
 deno==2.9.5
+
+# Browser-compatible HTTP transport for Douyin/TikTok
+curl_cffi==0.16.3
