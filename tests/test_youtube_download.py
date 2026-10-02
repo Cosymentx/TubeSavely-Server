@@ -21,10 +21,28 @@ class YouTubeDownloadTests(unittest.TestCase):
         response.__enter__.return_value = response
         response.read.return_value = ( ")]}'\n" + json.dumps(payload)).encode()
         downloader = SimpleNamespace(urlopen=MagicMock(return_value=response), params={})
-        initialize_youtube_guest(downloader)
+        self.assertTrue(initialize_youtube_guest(downloader))
         self.assertEqual(downloader.params['extractor_args']['youtube']['visitor_data'], ['fixture-visitor'])
         self.assertEqual(downloader.params['extractor_args']['youtube']['player_skip'], ['webpage', 'configs'])
         self.assertEqual(downloader.urlopen.call_args.args[0].url, 'https://www.youtube.com/sw.js_data')
+
+    def test_guest_initialization_falls_back_cleanly(self):
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = b'<html>unexpected</html>'
+        downloader = SimpleNamespace(urlopen=MagicMock(return_value=response), params={})
+        self.assertFalse(initialize_youtube_guest(downloader))
+        self.assertNotIn('extractor_args', downloader.params)
+
+    def test_download_limits_reject_long_or_oversized_media(self):
+        with patch.object(youtube.settings, 'YOUTUBE_MAX_DURATION_SECONDS', 60):
+            with self.assertRaises(HTTPException) as duration_error:
+                youtube._validate_download_limits(SimpleNamespace(duration='61'), {'filesize': 1})
+            self.assertEqual(duration_error.exception.status_code, 413)
+        with patch.object(youtube.settings, 'YOUTUBE_MAX_FILE_MB', 1):
+            with self.assertRaises(HTTPException) as size_error:
+                youtube._validate_download_limits(SimpleNamespace(duration='10'), {'filesize': 2 * 1024 * 1024})
+            self.assertEqual(size_error.exception.status_code, 413)
 
     def test_video_only_formats_include_audio_by_default(self):
         selected = {'format_id': '137', 'ext': 'mp4', 'vcodec': 'avc1', 'acodec': 'none'}
