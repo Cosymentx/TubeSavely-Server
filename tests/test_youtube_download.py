@@ -1,5 +1,6 @@
 from pathlib import Path
 import tempfile
+import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,11 +9,23 @@ from fastapi import HTTPException
 from app.services import youtube_download as youtube
 from app.services import video_download
 from app.schemas.video import VideoBase
+from app.services.video_runtime import initialize_youtube_guest
 
 URL = 'https://www.youtube.com/watch?v=XqJMIE6_9gY&t=332s'
 
 
 class YouTubeDownloadTests(unittest.TestCase):
+    def test_guest_visitor_initialization_reuses_existing_session(self):
+        payload = [[None, None, [[[None] * 13 + ['fixture-visitor']]]]]
+        response = MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = ( ")]}'\n" + json.dumps(payload)).encode()
+        downloader = SimpleNamespace(urlopen=MagicMock(return_value=response), params={})
+        initialize_youtube_guest(downloader)
+        self.assertEqual(downloader.params['extractor_args']['youtube']['visitor_data'], ['fixture-visitor'])
+        self.assertEqual(downloader.params['extractor_args']['youtube']['player_skip'], ['webpage', 'configs'])
+        self.assertEqual(downloader.urlopen.call_args.args[0].url, 'https://www.youtube.com/sw.js_data')
+
     def test_video_only_formats_include_audio_by_default(self):
         selected = {'format_id': '137', 'ext': 'mp4', 'vcodec': 'avc1', 'acodec': 'none'}
         self.assertEqual(youtube.format_selector(selected), '137+bestaudio[ext=m4a]/137+bestaudio')

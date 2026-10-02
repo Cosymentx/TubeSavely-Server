@@ -132,6 +132,7 @@ class Settings(BaseSettings):
 
     VIDEO_PROXY: str = os.environ.get("VIDEO_PROXY", "")
     YOUTUBE_COOKIES_BASE64: str = os.environ.get("YOUTUBE_COOKIES_BASE64", "")
+    YOUTUBE_PROXY: str | None = os.environ.get("YOUTUBE_PROXY")
     DOUYIN_COOKIES_BASE64: str = os.environ.get("DOUYIN_COOKIES_BASE64", "")
     TIKTOK_COOKIES_BASE64: str = os.environ.get("TIKTOK_COOKIES_BASE64", "")
     DOUYIN_PROXY: str | None = os.environ.get("DOUYIN_PROXY")
@@ -160,4 +161,3 @@ if settings.PRODUCTION:
         )
     if len(settings.SECRET_KEY) < 32:
         raise RuntimeError("SECRET_KEY must be at least 32 characters in production")
-

@@ -24,7 +24,7 @@ def upgrade():
     payment_columns = {item["name"] for item in inspector.get_columns("payments")}
 
     additions = (
-        ("credit_reversal_applied", sa.Boolean(), sa.text("0")),
+        ("credit_reversal_applied", sa.Boolean(), sa.false()),
         ("reversal_reason", sa.String(length=100), None),
         ("refunded_at", sa.DateTime(timezone=True), None),
         ("disputed_at", sa.DateTime(timezone=True), None),

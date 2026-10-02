@@ -8,6 +8,7 @@ import logging
 import os
 import shutil
 import tempfile
+import json
 from urllib.parse import urlparse
 
 from deno import find_deno_bin
@@ -34,6 +35,36 @@ class ExtractorLogger:
 def is_youtube_url(url):
     hostname = (urlparse(url).hostname or '').lower()
     return hostname == 'youtu.be' or hostname == 'youtube.com' or hostname.endswith('.youtube.com')
+
+
+def youtube_proxy():
+    from app.core.config import settings
+    return settings.VIDEO_PROXY if settings.YOUTUBE_PROXY is None else settings.YOUTUBE_PROXY
+
+
+def initialize_youtube_guest(downloader):
+    """Initialize public visitor data in the same HTTP session as playback.
+
+    Protocol reference: YoutubeExplode VideoController.ResolveVisitorDataAsync.
+    This provides an anonymous visitor identity, not an authenticated login.
+    """
+    from app.vendor.yt_dlp.networking import Request
+    try:
+        with downloader.urlopen(Request('https://www.youtube.com/sw.js_data', headers={
+            'Accept': 'application/json',
+            'User-Agent': 'com.google.android.youtube/20.10.38 (Linux; U; ANDROID 11) gzip',
+        })) as response:
+            raw = response.read(1024 * 1024).decode('utf-8')
+        if raw.startswith(")]}'"):
+            raw = raw[4:]
+        visitor = json.loads(raw)[0][2][0][0][13]
+        if not isinstance(visitor, str) or not visitor:
+            return
+        arguments = downloader.params.setdefault('extractor_args', {}).setdefault('youtube', {})
+        arguments['visitor_data'] = [visitor]
+        arguments['player_skip'] = ['webpage', 'configs']
+    except Exception:
+        logging.getLogger(__name__).debug('YouTube guest initialization unavailable')
 
 
 def javascript_runtimes():

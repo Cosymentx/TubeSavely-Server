@@ -17,7 +17,7 @@ from app.core.config import settings
 from app.vendor import yt_dlp
 from app.services.video_runtime import (
     ExtractorLogger, VideoParseError, extraction_error,
-    javascript_runtimes, youtube_cookie_file,
+    javascript_runtimes, youtube_cookie_file, youtube_proxy, initialize_youtube_guest,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,14 +53,14 @@ def fetch(original_url, selected, directory, include_audio=True, cached_info=Non
         'format': format_selector(selected, include_audio), 'merge_output_format': output_ext,
         'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
         'outtmpl': str(Path(directory) / 'video.%(ext)s'),
-        'progress_hooks': [progress], 'proxy': settings.VIDEO_PROXY,
+        'progress_hooks': [progress], 'proxy': youtube_proxy(),
     }
     with youtube_cookie_file(settings.YOUTUBE_COOKIES_BASE64) as cookies:
         if cookies:
             options['cookiefile'] = cookies
         else:
             options['extractor_args'] = {'youtube': {'player_client': ['visionos']}}
-        preferred_proxy = '' if selected.get('direct_download') is True else settings.VIDEO_PROXY
+        preferred_proxy = '' if selected.get('direct_download') is True else youtube_proxy()
         attempts = [(preferred_proxy, cached_info)]
         if cached_info:
             attempts.append((preferred_proxy, None))
@@ -72,6 +72,8 @@ def fetch(original_url, selected, directory, include_audio=True, cached_info=Non
                     if current_info:
                         downloader.process_ie_result(current_info, download=True)
                     else:
+                        if not cookies:
+                            initialize_youtube_guest(downloader)
                         downloader.extract_info(original_url, download=True)
                 break
             except Exception as error:

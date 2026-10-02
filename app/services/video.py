@@ -8,7 +8,7 @@ import traceback
 import logging
 from app.vendor import yt_dlp
 from app.core.config import settings
-from app.services.video_runtime import ExtractorLogger, VideoParseError, extraction_error, is_youtube_url, javascript_runtimes, youtube_cookie_file
+from app.services.video_runtime import ExtractorLogger, VideoParseError, extraction_error, is_youtube_url, javascript_runtimes, youtube_cookie_file, youtube_proxy, initialize_youtube_guest
 from app.services.video_urls import extract_url, platform_of
 from app.services import short_video
 from app.models.video import Video
@@ -151,7 +151,7 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
             'extractor_retries': 0,
             'extract_flat': False,  # 修改为False以获取完整的formats信息
             'force_generic_extractor': False,
-             'proxy': settings.VIDEO_PROXY,
+             'proxy': youtube_proxy() if is_youtube_url(url) else settings.VIDEO_PROXY,
         }
 
         platform = platform_of(url)
@@ -168,6 +168,8 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
             ydl_opts['cookiefile'] = cookies_file
             logger.info('A platform cookie file is configured')
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            if is_youtube_url(url) and not cookies_file:
+                initialize_youtube_guest(ydl)
             used_direct_connection = not bool(ydl_opts.get('proxy'))
             if platform:
                 for cookie in short_video.load_cookies(platform):
@@ -176,9 +178,11 @@ async def _yt_dlp_parse(url: str, cookie_override=None):
                 try:
                     data = ydl.extract_info(url, download=False)
                 except Exception as first_error:
-                    if is_youtube_url(url) and settings.VIDEO_PROXY and extraction_error(first_error).reason == 'video_network_error':
+                    if is_youtube_url(url) and ydl_opts.get('proxy') and extraction_error(first_error).reason == 'video_network_error':
                         logger.warning('Configured video proxy failed; trying a direct connection')
                         with yt_dlp.YoutubeDL({**ydl_opts, 'proxy': ''}) as direct_ydl:
+                            if not cookies_file:
+                                initialize_youtube_guest(direct_ydl)
                             data = direct_ydl.extract_info(url, download=False)
                             used_direct_connection = True
                     else:

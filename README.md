@@ -270,3 +270,9 @@ python -m unittest tests.test_yt_dlp_vendor -v
 成功解析扣除 3 积分，余额不足时不会创建解析记录或产生负余额。`POST /api/v1/videos/download` 接收 `{"url":"原始作品链接","format_id":"解析结果中的格式ID"}`，携带 Bearer Token 即可流式下载本人已解析的格式，下载不重复扣分。下载地址由服务端解析记录确定，错误页面不会作为视频返回。
 
 TikTok 作品没有发布文案时，标题使用作者昵称，描述保持为空；作品 ID、秒数时长、分辨率和文件大小按独立字段返回。套餐管理、人工修改积分和用户列表需要管理员权限，普通用户不能通过资料更新修改积分或申请管理员身份。
+
+### YouTube 下载会话
+
+YouTube 的高画质通常分为独立视频与音轨。下载接口使用原解析的客户端请求头、Cookie 和网络路由，由 yt-dlp 分段下载，再通过 FFmpeg 合并；旧地址被拒绝时会尝试刷新。下载不会重复扣积分，`include_audio=false` 可以保留无声视频模式。请求头和路由信息仅保存在服务端解析记录中，不随 API 响应返回。
+
+`YOUTUBE_PROXY` 未设置时继承 `VIDEO_PROXY`，显式设置为空表示直连，可与抖音、TikTok 分别配置。FFmpeg 由 `imageio-ffmpeg==0.6.0` 提供；遇到登录验证仍需要有效平台会话或可用出口，解析成功不等于视频 CDN 一定允许下载。设计对照 [YoutubeDownloader 的音视频下载组合](https://github.com/Tyrrrz/YoutubeDownloader/blob/prime/YoutubeDownloader.Core/Downloading/VideoDownloader.cs) 和 [YoutubeExplode 的分段下载](https://github.com/Tyrrrz/YoutubeExplode/blob/5d7f8343e73ee8361474a9113e983dce2e8af2f3/YoutubeExplode/Videos/Streams/MediaStream.cs)，未复制其源码。
