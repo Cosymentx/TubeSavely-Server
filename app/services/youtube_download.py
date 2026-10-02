@@ -81,10 +81,14 @@ def fetch(original_url, selected, directory, include_audio=True, cached_info=Non
     if not runtime:
         raise HTTPException(503, 'The YouTube download runtime is unavailable.')
     deadline = time.monotonic() + 240
+    max_bytes = settings.YOUTUBE_MAX_FILE_MB * 1024 * 1024
 
-    def progress(_):
+    def progress(status):
         if time.monotonic() > deadline:
             raise yt_dlp.utils.DownloadError('YouTube download timed out')
+        downloaded = int(status.get('downloaded_bytes') or 0)
+        if downloaded > max_bytes:
+            raise yt_dlp.utils.DownloadError('YouTube download exceeded the server size limit')
 
     output_ext = 'webm' if selected.get('ext') == 'webm' else 'mp4'
     options = {
@@ -92,6 +96,7 @@ def fetch(original_url, selected, directory, include_audio=True, cached_info=Non
         'cachedir': False, 'noplaylist': True, 'js_runtimes': runtime,
         'socket_timeout': 10, 'retries': 1, 'fragment_retries': 1,
         'extractor_retries': 0, 'http_chunk_size': 5 * 1024 * 1024,
+        'max_filesize': max_bytes,
         'format': format_selector(selected, include_audio), 'merge_output_format': output_ext,
         'ffmpeg_location': imageio_ffmpeg.get_ffmpeg_exe(),
         'outtmpl': str(Path(directory) / 'video.%(ext)s'),
