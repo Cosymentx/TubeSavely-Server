@@ -112,6 +112,69 @@ class YouTubeStreamingTests(unittest.IsolatedAsyncioTestCase):
             youtube._global_download_semaphore = original_global
             youtube._user_download_semaphores = original_users
 
+    async def test_queue_full_rejects_another_user(self):
+        original_global = youtube._global_download_semaphore
+        original_users = youtube._user_download_semaphores
+        original_waiting = youtube._global_waiting_downloads
+        youtube._global_download_semaphore = asyncio.Semaphore(0)
+        youtube._user_download_semaphores = {}
+        youtube._global_waiting_downloads = 0
+        try:
+            with patch.object(youtube.settings, 'YOUTUBE_DOWNLOAD_QUEUE_SIZE', 1):
+                first = asyncio.create_task(youtube._acquire_download_slots(1))
+                await asyncio.sleep(0.06)
+                with self.assertRaises(HTTPException) as error:
+                    await youtube._acquire_download_slots(2)
+                self.assertEqual(error.exception.status_code, 429)
+                first.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await first
+        finally:
+            youtube._global_download_semaphore = original_global
+            youtube._user_download_semaphores = original_users
+            youtube._global_waiting_downloads = original_waiting
+
+    async def test_queued_download_stops_waiting_when_client_disconnects(self):
+        original_global = youtube._global_download_semaphore
+        original_users = youtube._user_download_semaphores
+        original_waiting = youtube._global_waiting_downloads
+        youtube._global_download_semaphore = asyncio.Semaphore(0)
+        youtube._user_download_semaphores = {}
+        youtube._global_waiting_downloads = 0
+        request = SimpleNamespace(is_disconnected=AsyncMock(return_value=True))
+        try:
+            with patch.object(youtube.settings, 'YOUTUBE_DOWNLOAD_QUEUE_SIZE', 2):
+                with self.assertRaises(youtube.ClientDisconnected):
+                    await youtube._acquire_download_slots(9, request=request)
+        finally:
+            youtube._global_download_semaphore = original_global
+            youtube._user_download_semaphores = original_users
+            youtube._global_waiting_downloads = original_waiting
+
+    def test_cancel_event_aborts_yt_dlp_progress(self):
+        event = __import__('threading').Event()
+        event.set()
+        downloader = MagicMock()
+        context = MagicMock()
+        context.__enter__.return_value = downloader
+
+        def invoke_progress(*_args, **_kwargs):
+            progress = context_factory.call_args.args[0]['progress_hooks'][0]
+            progress({'downloaded_bytes': 1})
+
+        with tempfile.TemporaryDirectory() as directory:
+            downloader.extract_info.side_effect = invoke_progress
+            with patch.object(youtube.yt_dlp, 'YoutubeDL', return_value=context) as context_factory:
+                with patch.object(youtube, 'javascript_runtimes', return_value={'deno': {}}):
+                    with patch.object(youtube.settings, 'YOUTUBE_COOKIES_BASE64', 'configured'):
+                        with self.assertRaises(Exception):
+                            youtube.fetch(
+                                URL,
+                                {'format_id': '137', 'ext': 'mp4'},
+                                directory,
+                                cancel_event=event,
+                            )
+
     async def test_youtube_does_not_use_the_old_direct_media_url(self):
         record = SimpleNamespace(original_url=URL, title='Fixture')
         selected = {'format_id': '137', 'url': 'https://expired.example/video.mp4'}
@@ -120,12 +183,12 @@ class YouTubeStreamingTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(video_download.requests, 'AsyncSession') as direct:
                     result = await video_download.download(None, 1, URL, '137')
         self.assertEqual(result, 'fresh-video')
-        refreshed.assert_awaited_once_with(record, selected, True, user_id=1)
+        refreshed.assert_awaited_once_with(record, selected, True, user_id=1, request=None)
         direct.assert_not_called()
 
     async def test_stream_removes_temporary_files_after_delivery(self):
         paths = []
-        def fixture(_url, _selected, directory, _audio, _cached):
+        def fixture(_url, _selected, directory, _audio, _cached, _cancel):
             path = Path(directory) / 'video.mp4'
             path.write_bytes(b'\x00\x00\x00\x18ftypmp42fixture')
             paths.append(path)
