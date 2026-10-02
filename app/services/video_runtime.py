@@ -42,13 +42,10 @@ def youtube_proxy():
     return settings.VIDEO_PROXY if settings.YOUTUBE_PROXY is None else settings.YOUTUBE_PROXY
 
 
-def initialize_youtube_guest(downloader):
-    """Initialize public visitor data in the same HTTP session as playback.
-
-    Protocol reference: YoutubeExplode VideoController.ResolveVisitorDataAsync.
-    This provides an anonymous visitor identity, not an authenticated login.
-    """
+def initialize_youtube_guest(downloader) -> bool:
+    """Initialize anonymous YouTube visitor data in the current HTTP session."""
     from app.vendor.yt_dlp.networking import Request
+    log = logging.getLogger(__name__)
     try:
         with downloader.urlopen(Request('https://www.youtube.com/sw.js_data', headers={
             'Accept': 'application/json',
@@ -59,12 +56,16 @@ def initialize_youtube_guest(downloader):
             raw = raw[4:]
         visitor = json.loads(raw)[0][2][0][0][13]
         if not isinstance(visitor, str) or not visitor:
-            return
+            log.warning('YouTube guest initialization returned no visitor data')
+            return False
         arguments = downloader.params.setdefault('extractor_args', {}).setdefault('youtube', {})
         arguments['visitor_data'] = [visitor]
         arguments['player_skip'] = ['webpage', 'configs']
-    except Exception:
-        logging.getLogger(__name__).debug('YouTube guest initialization unavailable')
+        log.debug('YouTube guest session initialized')
+        return True
+    except Exception as error:
+        log.warning('YouTube guest initialization failed: %s', error.__class__.__name__)
+        return False
 
 
 def javascript_runtimes():
