@@ -135,6 +135,7 @@ class Settings(BaseSettings):
     YOUTUBE_PROXY: str | None = os.environ.get("YOUTUBE_PROXY")
     YOUTUBE_DOWNLOAD_MAX_CONCURRENCY: int = int(os.environ.get("YOUTUBE_DOWNLOAD_MAX_CONCURRENCY", "3"))
     YOUTUBE_DOWNLOAD_MAX_PER_USER: int = int(os.environ.get("YOUTUBE_DOWNLOAD_MAX_PER_USER", "1"))
+    YOUTUBE_DOWNLOAD_QUEUE_SIZE: int = int(os.environ.get("YOUTUBE_DOWNLOAD_QUEUE_SIZE", "6"))
     YOUTUBE_MAX_DURATION_SECONDS: int = int(os.environ.get("YOUTUBE_MAX_DURATION_SECONDS", "3600"))
     YOUTUBE_MAX_FILE_MB: int = int(os.environ.get("YOUTUBE_MAX_FILE_MB", "1024"))
     DOUYIN_COOKIES_BASE64: str = os.environ.get("DOUYIN_COOKIES_BASE64", "")
