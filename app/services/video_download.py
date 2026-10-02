@@ -44,10 +44,10 @@ def owned_format(db, user_id, original_url, format_id):
     return record, selected
 
 
-async def download(db, user_id, original_url, format_id, include_audio=True):
+async def download(db, user_id, original_url, format_id, include_audio=True, request=None):
     record, selected = owned_format(db, user_id, original_url, format_id)
     if is_youtube_url(record.original_url):
-        return await youtube_download.download(record, selected, include_audio, user_id=user_id)
+        return await youtube_download.download(record, selected, include_audio, user_id=user_id, request=request)
     platform = platform_of(record.original_url)
     headers = {'User-Agent': USER_AGENT, 'Accept-Encoding': 'identity'}
     if platform:
