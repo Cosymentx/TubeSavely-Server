@@ -146,6 +146,16 @@ async def download(record, selected, include_audio=True, user_id=0):
     _validate_download_limits(record, selected)
     user_sem = await _acquire_download_slots(user_id)
     temporary = tempfile.TemporaryDirectory(prefix='tubesavely-youtube-')
+    released = False
+
+    def cleanup():
+        nonlocal released
+        temporary.cleanup()
+        if not released:
+            released = True
+            user_sem.release()
+            _global_download_semaphore.release()
+
     cached_formats = []
     for candidate in getattr(record, 'formats', None) or []:
         host = (urlsplit(candidate.get('url') or '').hostname or '').lower()
@@ -161,21 +171,15 @@ async def download(record, selected, include_audio=True, user_id=0):
     try:
         path = await asyncio.to_thread(fetch, record.original_url, selected, temporary.name, include_audio, cached_info)
     except VideoParseError as error:
-        temporary.cleanup()
-        user_sem.release()
-        _global_download_semaphore.release()
+        cleanup()
         raise HTTPException(error.code, str(error)) from None
     except BaseException:
-        temporary.cleanup()
-        user_sem.release()
-        _global_download_semaphore.release()
+        cleanup()
         raise
 
     max_bytes = settings.YOUTUBE_MAX_FILE_MB * 1024 * 1024
     if path.stat().st_size > max_bytes:
-        temporary.cleanup()
-        user_sem.release()
-        _global_download_semaphore.release()
+        cleanup()
         raise HTTPException(413, 'The prepared video is too large to download through the server.')
 
     async def body():
@@ -184,9 +188,7 @@ async def download(record, selected, include_audio=True, user_id=0):
                 while chunk := await asyncio.to_thread(source.read, 256 * 1024):
                     yield chunk
         finally:
-            temporary.cleanup()
-            user_sem.release()
-            _global_download_semaphore.release()
+            cleanup()
 
     title = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]', '_', record.title or 'video')[:150]
     extension = path.suffix.lstrip('.')
@@ -196,4 +198,4 @@ async def download(record, selected, include_audio=True, user_id=0):
         'Content-Disposition': f"attachment; filename=video.{extension}; filename*=UTF-8''{quote(title + path.suffix, safe='')}",
         'Content-Length': str(path.stat().st_size), 'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff',
-    }, background=BackgroundTask(temporary.cleanup))
+    }, background=BackgroundTask(cleanup))
