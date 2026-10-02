@@ -1,3 +1,4 @@
+import asyncio
 from pathlib import Path
 import tempfile
 import json
@@ -95,6 +96,22 @@ class YouTubeDownloadTests(unittest.TestCase):
 
 
 class YouTubeStreamingTests(unittest.IsolatedAsyncioTestCase):
+    async def test_same_user_cannot_start_two_youtube_downloads(self):
+        original_global = youtube._global_download_semaphore
+        original_users = youtube._user_download_semaphores
+        youtube._global_download_semaphore = asyncio.Semaphore(2)
+        youtube._user_download_semaphores = {}
+        try:
+            first = await youtube._acquire_download_slots(42)
+            with self.assertRaises(HTTPException) as error:
+                await youtube._acquire_download_slots(42)
+            self.assertEqual(error.exception.status_code, 429)
+            first.release()
+            youtube._global_download_semaphore.release()
+        finally:
+            youtube._global_download_semaphore = original_global
+            youtube._user_download_semaphores = original_users
+
     async def test_youtube_does_not_use_the_old_direct_media_url(self):
         record = SimpleNamespace(original_url=URL, title='Fixture')
         selected = {'format_id': '137', 'url': 'https://expired.example/video.mp4'}
@@ -103,7 +120,7 @@ class YouTubeStreamingTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(video_download.requests, 'AsyncSession') as direct:
                     result = await video_download.download(None, 1, URL, '137')
         self.assertEqual(result, 'fresh-video')
-        refreshed.assert_awaited_once_with(record, selected, True)
+        refreshed.assert_awaited_once_with(record, selected, True, user_id=1)
         direct.assert_not_called()
 
     async def test_stream_removes_temporary_files_after_delivery(self):
