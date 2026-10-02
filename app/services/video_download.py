@@ -101,6 +101,7 @@ async def download(db, user_id, original_url, format_id, include_audio=True, req
             extension = 'mp4'
         name = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]', '_', record.title or 'video')[:150]
         filename = quote(f'{name}.{extension}', safe='')
+        content_length = response.headers.get('content-length')
 
         async def chunks():
             try:
@@ -111,10 +112,20 @@ async def download(db, user_id, original_url, format_id, include_audio=True, req
             finally:
                 await close()
 
-        return StreamingResponse(chunks(), media_type=media_type, headers={
+        headers = {
             'Content-Disposition': f"attachment; filename=video.{extension}; filename*=UTF-8''{filename}",
-            'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff',
-        }, background=BackgroundTask(close))
+            'Cache-Control': 'private, no-store',
+            'X-Content-Type-Options': 'nosniff',
+        }
+        if content_length and content_length.isdigit():
+            headers['Content-Length'] = content_length
+
+        return StreamingResponse(
+            chunks(),
+            media_type=media_type,
+            headers=headers,
+            background=BackgroundTask(close),
+        )
     except HTTPException:
         await close()
         raise
