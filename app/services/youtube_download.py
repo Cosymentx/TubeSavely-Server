@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 import re
 import tempfile
+import threading
 import time
 from urllib.parse import quote, urlsplit
 
@@ -24,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 _global_download_semaphore = asyncio.Semaphore(max(1, settings.YOUTUBE_DOWNLOAD_MAX_CONCURRENCY))
 _user_download_semaphores: dict[int, asyncio.Semaphore] = {}
+_global_waiting_downloads = 0
+
+
+class ClientDisconnected(Exception):
+    pass
 
 
 def _user_semaphore(user_id: int) -> asyncio.Semaphore:
@@ -33,18 +39,37 @@ def _user_semaphore(user_id: int) -> asyncio.Semaphore:
     )
 
 
-async def _acquire_download_slots(user_id: int):
+async def _acquire_download_slots(user_id: int, request=None):
+    global _global_waiting_downloads
     user_sem = _user_semaphore(user_id)
-    try:
-        await asyncio.wait_for(_global_download_semaphore.acquire(), timeout=0.05)
-    except TimeoutError:
-        raise HTTPException(429, 'Too many YouTube downloads are running. Please try again shortly.') from None
+
     try:
         await asyncio.wait_for(user_sem.acquire(), timeout=0.05)
     except TimeoutError:
-        _global_download_semaphore.release()
         raise HTTPException(429, 'You already have a YouTube download running. Please wait for it to finish.') from None
-    return user_sem
+
+    try:
+        await asyncio.wait_for(_global_download_semaphore.acquire(), timeout=0.05)
+        return user_sem
+    except TimeoutError:
+        if _global_waiting_downloads >= max(0, settings.YOUTUBE_DOWNLOAD_QUEUE_SIZE):
+            user_sem.release()
+            raise HTTPException(429, 'The YouTube download queue is full. Please try again shortly.') from None
+
+    _global_waiting_downloads += 1
+    try:
+        while True:
+            try:
+                await asyncio.wait_for(_global_download_semaphore.acquire(), timeout=0.25)
+                return user_sem
+            except TimeoutError:
+                if request is not None and await request.is_disconnected():
+                    raise ClientDisconnected()
+    except BaseException:
+        user_sem.release()
+        raise
+    finally:
+        _global_waiting_downloads -= 1
 
 
 def _validate_download_limits(record, selected):
@@ -75,7 +100,7 @@ def format_selector(selected, include_audio=True):
     return identity
 
 
-def fetch(original_url, selected, directory, include_audio=True, cached_info=None):
+def fetch(original_url, selected, directory, include_audio=True, cached_info=None, cancel_event=None):
     """Re-extract URLs and use yt-dlp's headers, cookies and chunked downloader."""
     runtime = javascript_runtimes()
     if not runtime:
@@ -84,6 +109,8 @@ def fetch(original_url, selected, directory, include_audio=True, cached_info=Non
     max_bytes = settings.YOUTUBE_MAX_FILE_MB * 1024 * 1024
 
     def progress(status):
+        if cancel_event is not None and cancel_event.is_set():
+            raise yt_dlp.utils.DownloadError('YouTube download cancelled')
         if time.monotonic() > deadline:
             raise yt_dlp.utils.DownloadError('YouTube download timed out')
         downloaded = int(status.get('downloaded_bytes') or 0)
@@ -147,9 +174,9 @@ def fetch(original_url, selected, directory, include_audio=True, cached_info=Non
     return path
 
 
-async def download(record, selected, include_audio=True, user_id=0):
+async def download(record, selected, include_audio=True, user_id=0, request=None):
     _validate_download_limits(record, selected)
-    user_sem = await _acquire_download_slots(user_id)
+    user_sem = await _acquire_download_slots(user_id, request=request)
     temporary = tempfile.TemporaryDirectory(prefix='tubesavely-youtube-')
     released = False
 
@@ -173,11 +200,34 @@ async def download(record, selected, include_audio=True, user_id=0):
     cached_info = {'id': getattr(record, 'video_id', None) or 'video',
                    'title': record.title or 'video', 'webpage_url': record.original_url,
                    'extractor': 'youtube', 'formats': cached_formats} if cached_formats and selected.get('download_headers') else None
+    cancel_event = threading.Event()
+    fetch_task = asyncio.create_task(asyncio.to_thread(
+        fetch,
+        record.original_url,
+        selected,
+        temporary.name,
+        include_audio,
+        cached_info,
+        cancel_event,
+    ))
+    disconnected = False
     try:
-        path = await asyncio.to_thread(fetch, record.original_url, selected, temporary.name, include_audio, cached_info)
+        while not fetch_task.done():
+            await asyncio.wait({fetch_task}, timeout=0.25)
+            if request is not None and await request.is_disconnected():
+                disconnected = True
+                cancel_event.set()
+        path = await fetch_task
+        if disconnected:
+            cleanup()
+            raise HTTPException(499, 'Client closed the download request.')
     except VideoParseError as error:
         cleanup()
         raise HTTPException(error.code, str(error)) from None
+    except asyncio.CancelledError:
+        cancel_event.set()
+        fetch_task.add_done_callback(lambda _future: cleanup())
+        raise
     except BaseException:
         cleanup()
         raise
