@@ -22,6 +22,48 @@ from app.services.video_runtime import (
 
 logger = logging.getLogger(__name__)
 
+_global_download_semaphore = asyncio.Semaphore(max(1, settings.YOUTUBE_DOWNLOAD_MAX_CONCURRENCY))
+_user_download_semaphores: dict[int, asyncio.Semaphore] = {}
+
+
+def _user_semaphore(user_id: int) -> asyncio.Semaphore:
+    return _user_download_semaphores.setdefault(
+        user_id,
+        asyncio.Semaphore(max(1, settings.YOUTUBE_DOWNLOAD_MAX_PER_USER)),
+    )
+
+
+async def _acquire_download_slots(user_id: int):
+    user_sem = _user_semaphore(user_id)
+    try:
+        await asyncio.wait_for(_global_download_semaphore.acquire(), timeout=0.05)
+    except TimeoutError:
+        raise HTTPException(429, 'Too many YouTube downloads are running. Please try again shortly.') from None
+    try:
+        await asyncio.wait_for(user_sem.acquire(), timeout=0.05)
+    except TimeoutError:
+        _global_download_semaphore.release()
+        raise HTTPException(429, 'You already have a YouTube download running. Please wait for it to finish.') from None
+    return user_sem
+
+
+def _validate_download_limits(record, selected):
+    try:
+        duration = int(float(getattr(record, 'duration', 0) or 0))
+    except (TypeError, ValueError):
+        duration = 0
+    if duration and duration > settings.YOUTUBE_MAX_DURATION_SECONDS:
+        raise HTTPException(413, 'This video is too long to download through the server.')
+
+    max_bytes = settings.YOUTUBE_MAX_FILE_MB * 1024 * 1024
+    try:
+        estimated = int(selected.get('filesize') or selected.get('filesize_approx') or 0)
+    except (TypeError, ValueError):
+        estimated = 0
+    if estimated and estimated > max_bytes:
+        raise HTTPException(413, 'This video format is too large to download through the server.')
+
+
 
 def format_selector(selected, include_audio=True):
     identity = str(selected.get('format_id', ''))
@@ -100,7 +142,9 @@ def fetch(original_url, selected, directory, include_audio=True, cached_info=Non
     return path
 
 
-async def download(record, selected, include_audio=True):
+async def download(record, selected, include_audio=True, user_id=0):
+    _validate_download_limits(record, selected)
+    user_sem = await _acquire_download_slots(user_id)
     temporary = tempfile.TemporaryDirectory(prefix='tubesavely-youtube-')
     cached_formats = []
     for candidate in getattr(record, 'formats', None) or []:
@@ -118,10 +162,21 @@ async def download(record, selected, include_audio=True):
         path = await asyncio.to_thread(fetch, record.original_url, selected, temporary.name, include_audio, cached_info)
     except VideoParseError as error:
         temporary.cleanup()
+        user_sem.release()
+        _global_download_semaphore.release()
         raise HTTPException(error.code, str(error)) from None
     except BaseException:
         temporary.cleanup()
+        user_sem.release()
+        _global_download_semaphore.release()
         raise
+
+    max_bytes = settings.YOUTUBE_MAX_FILE_MB * 1024 * 1024
+    if path.stat().st_size > max_bytes:
+        temporary.cleanup()
+        user_sem.release()
+        _global_download_semaphore.release()
+        raise HTTPException(413, 'The prepared video is too large to download through the server.')
 
     async def body():
         try:
@@ -130,6 +185,8 @@ async def download(record, selected, include_audio=True):
                     yield chunk
         finally:
             temporary.cleanup()
+            user_sem.release()
+            _global_download_semaphore.release()
 
     title = re.sub(r'[\\/:*?"<>|\x00-\x1f\x7f]', '_', record.title or 'video')[:150]
     extension = path.suffix.lstrip('.')
